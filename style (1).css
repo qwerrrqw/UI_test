@@ -1,0 +1,320 @@
+/* ===== AllDataDialog (전체 조회) ===== */
+QDialog#AllDataDialog {
+  background-color: #f8f9fa;
+  color: #212529;
+  /* 기존 resize(1000,700) 대체: 최소 크기 */
+  min-width: 1000px;
+  min-height: 500px;
+}
+
+QDialog#AllDataDialog QLabel {
+  background-color: transparent;
+}
+
+QDialog#AllDataDialog QLineEdit,
+QDialog#AllDataDialog QDateEdit,
+QDialog#AllDataDialog QComboBox {
+  background-color: #ffffff;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  padding: 5px;
+}
+
+QDialog#AllDataDialog QPushButton {
+  background-color: #e9ecef;
+  border: 1px solid #ced4da;
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+QDialog#AllDataDialog QPushButton:hover   { background-color: #dee2e6; }
+QDialog#AllDataDialog QPushButton:pressed { background-color: #ced4da; }
+
+QDialog#AllDataDialog QTableWidget {
+  background-color: #ffffff;
+  /* 아래 줄무늬는 setAlternatingRowColors(True) 필요 */
+  alternate-background-color: #f1f3f5;
+  gridline-color: #dee2e6;
+  border: 1px solid #ced4da;
+}
+
+QDialog#AllDataDialog QHeaderView::section {
+  background-color: #e9ecef;
+  color: #212529;
+  font-weight: bold;
+  padding: 6px;
+  border: none;
+  border-bottom: 1px solid #dee2e6;
+}
+
+/* 선택됐을 때는 항상 파란색(활성/비활성/hover 모두 동일) */
+QDialog#AllDataDialog QTableWidget::item:selected,
+QDialog#AllDataDialog QTableWidget::item:selected:active,
+QDialog#AllDataDialog QTableWidget::item:selected:!active,
+QDialog#AllDataDialog QAbstractItemView::item:selected:active,
+QDialog#AllDataDialog QAbstractItemView::item:selected:!active {
+  background-color: #0d6efd;
+  color: #ffffff;
+}
+
+/* 비선택 상태에서 hover 효과 완전 제거 */
+QDialog#AllDataDialog QTableWidget::item:!selected:hover,
+QDialog#AllDataDialog QAbstractItemView::item:!selected:hover {
+  background-color: transparent;
+}
+
+/* ===== Image Viewer Dialog ===== */
+QDialog#ImageViewerDialog {
+  /* 필요 시 최소 크기 지정 가능 */
+  /* min-width: 640px; min-height: 480px; */
+  background-color: #f8f9fa;
+  color: #212529;
+}
+
+QDialog#ImageViewerDialog QScrollArea {
+  border: 1px solid #ced4da;
+  background: #000; /* 큰 이미지 볼 때 배경을 어둡게 */
+}
+
+QDialog#ImageViewerDialog QLabel#ImageLabel {
+  /* 코드에서 setAlignment를 주석 처리했다면 이걸로 대체 */
+  qproperty-alignment: AlignCenter;
+  background: transparent;
+}
+
+QDialog#ImageViewerDialog QPushButton {
+  /* 코드의 setFixedWidth(100) 대체 */
+  min-width: 100px;
+  max-width: 100px;
+  padding: 5px 10px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  background: #e9ecef;
+}
+QDialog#ImageViewerDialog QPushButton:hover   { background-color: #dee2e6; }
+QDialog#ImageViewerDialog QPushButton:pressed { background-color: #ced4da; }
+
+QDialog#ImageViewerDialog QLabel#ZoomLevelLabel {
+  margin-left: 8px;  /* 버튼과 간격 */
+}
+
+/* ===== AllDataDialog: 이미지 경로 컬럼 색상(파일 존재 여부) ===== */
+QDialog#AllDataDialog QLabel#ImagePathLabel[fileExists="true"]  { color: #1d6f42; } /* 존재: 초록 */
+QDialog#AllDataDialog QLabel#ImagePathLabel[fileExists="false"] { color: #d13438; } /* 없음: 빨강 */
+
+/* (선택) 테이블 셀 라벨 기본 모양 */
+QDialog#AllDataDialog QTableWidget QLabel#ImagePathLabel {
+  background: transparent;
+  /* 가운데 정렬은 코드에서 setAlignment가 더 확실함 */
+}
+
+/* ===== Main table (data_table) — BEFORE와 동일한 다크 팔레트 ===== */
+QTableWidget#DataTable {
+  background-color: #2C2F36;            /* 테이블 전체 배경색 */
+  alternate-background-color: #34383F;  /* 교차 행 배경색 */
+  gridline-color: #3E4249;              /* 그리드 라인 색상 */
+  color: #E0E0E0;                       /* 기본 글자색 */
+  border: 1px solid #3E4249;
+  font-size: 13px;
+  selection-background-color: #0D6EFD;  /* 선택 배경 */
+  selection-color: #FFFFFF;             /* 선택 텍스트 */
+}
+
+/* 헤더 */
+QTableWidget#DataTable QHeaderView::section {
+  background-color: #393E46;  /* 헤더 배경 (짙은 회색) */
+  color: #F1F3F5;             /* 헤더 글자색 (밝은 회색) */
+  font-weight: bold;
+  padding: 6px;
+  border: none;
+  border-bottom: 1px solid #4A4E57;
+}
+
+/* 셀 */
+QTableWidget#DataTable::item {
+  border-bottom: 1px solid #3E4249;
+  padding: 5px;
+}
+
+/* 선택 상태 */
+QTableWidget#DataTable::item:selected {
+  background-color: #0D6EFD;
+  color: #FFFFFF;
+}
+
+/* ===== Center name label (blink) — BEFORE와 동일 ===== */
+QLabel#center_name {
+  font-size: 42px;
+  font-weight: bold;
+  background-color: #DBE2EF;  /* 이전값으로 복구 */
+  color: #888;                /* 기본 텍스트 색 */
+}
+
+/* 깜빡임 상태: 글자색을 배경과 동일하게 → 하이라이트 효과 */
+QLabel#center_name[blinking=true] {
+  color: #DBE2EF;
+}
+
+/* ===== Start/Stop main button — BEFORE와 동일 ===== */
+QPushButton#pushButton {
+  font-size: 18px;
+  font-family: 'Segoe UI','맑은 고딕','Noto Sans KR',sans-serif;
+  color: #ffffff;
+  background-color: #3F72AF;   /* 시작(대기) 파랑 */
+  border: none;
+  border-radius: 6px;
+  padding: 12px 24px;
+  font-weight: bold;
+}
+QPushButton#pushButton:hover { background-color: #112D4E; }
+QPushButton#pushButton:pressed { background-color: #a6cdec; }
+
+/* 작업 중단 상태(실행 중) — BEFORE의 주황/적색 톤 */
+QPushButton#pushButton[running=true] {
+  color: #ffffff;
+  background-color: #D04925;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 24px;
+  font-weight: bold;
+}
+/* (선택) 호버 색 약간만 어둡게 */
+QPushButton#pushButton[running=true]:hover { background-color: #bb3e1f; }
+QPushButton#pushButton[running=true]:pressed { background: #e23a3a; }
+
+
+/* ===== 통합 인디케이터 라벨 ===== */
+QLabel[indicator=true] {
+  border-radius: 5px;
+  padding: 5px;
+  color: #ffffff;
+}
+
+/* 상태별 */
+QLabel[indicator=true][status="ok"]    { background-color: #4CAF50; } /* 초록 */
+QLabel[indicator=true][status="error"] { background-color: #F44336; } /* 빨강 */
+
+/* (선택) 경고 상태도 쓰고 싶다면 */
+QLabel[indicator=true][status="warn"]  { background-color: #FFC107; color: #212529; }
+
+/* ===== QMessageBox (전역 적용) ===== */
+QMessageBox {
+  background-color: #ffffff;
+}
+QMessageBox QLabel {
+  color: #000000;
+  background-color: #ffffff;
+}
+QMessageBox QPushButton {
+  min-width: 80px;
+  padding: 5px;
+  background-color: #CCCCCC;
+  border: 1px solid #B5B5B5;
+  border-radius: 4px;
+}
+QMessageBox QPushButton:hover   { background-color: #BDBDBD; }
+QMessageBox QPushButton:pressed { background-color: #AFAFAF; }
+
+/* 호환: 아이콘용 작은 버튼들 */
+QPushButton#pushButton_2,
+QPushButton#pushButton_3 {
+  background-color: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* ‘작업 상세 정보’ 버튼 */
+QPushButton#pushButton_4 {
+  border: 1px solid #000000;
+  color: #000000;
+  background-color: #CCCCCC;
+}
+
+/* 라벨들 */
+QLabel#logo_1, QLabel#logo_3 { border: 2px solid #000000; }
+QLabel#image_label { border: 2px solid #222; background-color: #000000; }
+
+QLabel#image_title,
+QLabel#image_title_2,
+QLabel#image_title_3 { font-size: 16px; font-weight: bold; }
+QLabel#image_title   { color: #000000; }
+QLabel#image_title_2,
+QLabel#image_title_3 { color: #ffffff; }
+
+QLabel#count_title,
+QLabel#line_1 {
+  font-size: 34px;
+  color: #606880;
+  font-weight: bold;
+  background-color: #F0F0F0;
+}
+
+QLabel#count_label {
+  font-size: 48px;
+  color: #0c61c4;
+  font-weight: bold;
+  background-color: #F0F0F0;
+}
+
+QLabel#datetime_label { font-size: 22px; color: #ffffff; font-weight: bold; }
+
+/* 메인윈도우 배경 색상 */
+QMainWindow#MainWindow { background-color: #2C2F36; }
+
+/* ImageViewerDialog: 스크롤영역 배경을 viewport에 적용 */
+QDialog#ImageViewerDialog QScrollArea { border: 1px solid #ced4da; background-color: transparent; }
+QDialog#ImageViewerDialog QWidget#qt_scrollarea_viewport { background-color: #000000; }
+
+/* m1panel: 패널 배경/테두리 */
+QFrame#m1panel {
+  background-color: #DBE2EF;
+  border: 2px solid #000000;
+  border-radius: 12px;
+}
+
+/* 패널 안 라벨은 배경 투명 (패널 배경이 보이도록) */
+QFrame#m1panel QLabel {
+  background: transparent;
+}
+
+/* 타이틀/수량/센터명 텍스트 규칙(이전과 동일 톤) */
+QLabel#count_title { font-size: 34px; color: #606880; font-weight: bold; }
+QLabel#line_1      { background: transparent; } /* 구분선 라벨이면 투명 유지 */
+/* 상품 인식 수량 라벨 */
+QLabel#count_label {
+  font-size: 48px;
+  color: #0c61c4;
+  font-weight: bold;
+  padding: 2px 0 6px 0;  /* 아래쪽에 여유 */
+  min-height: 64px;      /* 66~72로 맞춰봐도 OK */
+}
+QLabel#center_name { font-size: 42px; color: #888; font-weight: bold; background: transparent; }
+
+/* AllDataDialog 달력 팝업 크게/가독성 향상 */
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar {
+  font-size: 16px;
+  min-width: 380px;
+  min-height: 320px;
+}
+
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar QToolButton {
+  /* 상단 월/연도, 좌우 화살표 버튼 */
+  font-size: 16px;
+  padding: 6px 10px;
+  min-height: 28px;
+}
+
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar QAbstractItemView {
+  /* 날짜 그리드 */
+  font-size: 16px;
+  selection-background-color: #0d6efd;
+  selection-color: #ffffff;
+}
+
+QDialog#AllDataDialog QLineEdit,
+QDialog#AllDataDialog QDateEdit,
+QDialog#AllDataDialog QComboBox {
+  background-color: #ffffff;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  padding: 5px;
+}
