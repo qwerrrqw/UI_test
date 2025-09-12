@@ -25,7 +25,8 @@ from PySide6.QtCore import (
     QThread,
     Signal,
     Slot,
-    QDate
+    QDate,
+    QRect
 )
 from PySide6.QtGui import QPixmap, QColor, QFontMetrics ,QBrush, QPalette ,QGuiApplication
 from PySide6.QtWidgets import (
@@ -55,6 +56,9 @@ from PySide6.QtWidgets import (
     QCalendarWidget,
     QStyleOptionViewItem,
     QFileDialog,
+    QListWidget,
+    QListWidgetItem,
+    QDialogButtonBox
 )
 from PySide6.QtNetwork import QTcpSocket, QHostAddress
 from datetime import date as _date
@@ -1113,12 +1117,20 @@ class AllDataDialog(QDialog):
                 QMessageBox.critical(self, "오류", f"이미지 열기 실패: {str(e)}")
 
     def _export_to_csv(self):
-        """현재 테이블 데이터를 CSV 파일로 내보내기"""
-        # 파일 저장 대화상자
+        """현재 테이블 데이터를 CSV 파일로 내보내기(선택한 컬럼만)."""
+        # 1) 컬럼 선택
+        cols = self._choose_export_columns()
+        if cols is None:
+            return  # 취소
+        if not cols:
+            QMessageBox.information(self, "안내", "선택된 컬럼이 없습니다.")
+            return
+
+        # 2) 파일 저장 대화상자
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "CSV 파일 저장",
-            "",  # 기본 파일명 넣고 싶으면 여기 "export.csv" 같은 값
+            "",
             "CSV 파일 (*.csv);;모든 파일 (*.*)"
         )
         if not file_path:
@@ -1126,28 +1138,28 @@ class AllDataDialog(QDialog):
         if not file_path.lower().endswith(".csv"):
             file_path += ".csv"
 
+        # 3) 쓰기
         try:
             with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
                 wr = csv.writer(f)
 
-                # 헤더: 정렬 화살표(▲/▼) 제거
+                # 헤더: 선택한 컬럼만 + 정렬 화살표 제거
                 headers = []
-                for c in range(self.table.columnCount()):
+                for c in cols:
                     it = self.table.horizontalHeaderItem(c)
                     text = it.text() if it else ""
                     text = text.replace(" ▲", "").replace(" ▼", "")
                     headers.append(text)
                 wr.writerow(headers)
 
-                # 데이터
+                # 데이터: 선택한 컬럼만
                 for r in range(self.table.rowCount()):
                     row = []
-                    for c in range(self.table.columnCount()):
+                    for c in cols:
                         it = self.table.item(r, c)
                         if it is not None:
                             row.append(it.text())
                         else:
-                            # 셀 위젯(예: 이미지 경로 라벨) 처리
                             w = self.table.cellWidget(r, c)
                             if isinstance(w, QLabel):
                                 row.append(w.text())
@@ -1158,6 +1170,63 @@ class AllDataDialog(QDialog):
             QMessageBox.information(self, "내보내기 성공", f"저장됨:\n{file_path}")
         except Exception as e:
             QMessageBox.critical(self, "내보내기 실패", f"CSV 저장 중 오류:\n{e}")
+
+    def _choose_export_columns(self) -> list[int] | None:
+        """내보낼 컬럼을 체크박스로 선택하는 간단한 다이얼로그.
+        반환: 체크된 컬럼 인덱스 리스트(순서는 원래 순서), 취소 시 None."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("내보낼 컬럼 선택")
+        dlg.setModal(True)
+
+        v = QVBoxLayout(dlg)
+        v.addWidget(QLabel("CSV로 내보낼 컬럼을 선택하세요.", dlg))
+
+        lst = QListWidget(dlg)
+        lst.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        # 현재 헤더를 기반으로 항목 생성 (▲/▼ 제거)
+        for col in range(self.table.columnCount()):
+            item = QListWidgetItem()
+            hdr_it = self.table.horizontalHeaderItem(col)
+            text = (hdr_it.text() if hdr_it else f"컬럼 {col}").replace(" ▲", "").replace(" ▼", "")
+            item.setText(text)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)  # 기본: 전부 선택
+            item.setData(Qt.ItemDataRole.UserRole, col)
+            lst.addItem(item)
+        v.addWidget(lst)
+
+        # 버튼들
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, parent=dlg)
+        v.addWidget(btns)
+
+        # 선택/해제 단축 버튼(선택)
+        hb = QHBoxLayout()
+        sel_all = QPushButton("전체 선택", dlg)
+        clr_all = QPushButton("전체 해제", dlg)
+        hb.addWidget(sel_all)
+        hb.addWidget(clr_all)
+        v.insertLayout(2, hb)
+
+        def _set_all(state: Qt.CheckState):
+            for i in range(lst.count()):
+                lst.item(i).setCheckState(state)
+
+        sel_all.clicked.connect(lambda: _set_all(Qt.CheckState.Checked))
+        clr_all.clicked.connect(lambda: _set_all(Qt.CheckState.Unchecked))
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None
+
+        # 체크된 컬럼만 모아 반환 (원래 컬럼 순서 유지)
+        chosen: list[int] = []
+        for i in range(lst.count()):
+            it = lst.item(i)
+            if it.checkState() == Qt.CheckState.Checked:
+                chosen.append(int(it.data(Qt.ItemDataRole.UserRole)))
+        return chosen
+
 
     def _load_all(self):
         """
@@ -1362,6 +1431,8 @@ class MainWindow(QMainWindow):
         self.ui.setupUi(self)
         self._pack_m1panel()  ## ⬅️ 추가: 패널 재구성
         QTimer.singleShot(0, self._apply_logo)
+        self._init_indicator_icons()
+        self._shrink_image_box(420, 320)
 
         ## ★ 자동생성 파일의 인라인 스타일 제거(전역 QSS가 우선 적용되게)
         #    특정 위젯은 유지하고 싶다면 keep 집합에 objectName을 추가하세요.
@@ -1429,6 +1500,9 @@ class MainWindow(QMainWindow):
         self._setup_heartbeat_monitor()  # plc, cam
         self._setup_network_monitor()    # 네트워크
         self._setup_speed_monitor()      # 속도
+        self._setup_connection_log()
+
+        QTimer.singleShot(0, self._place_conn_log_below_image)
 
     def _pack_m1panel(self):
         p = self.ui.m1panel
@@ -1865,7 +1939,33 @@ class MainWindow(QMainWindow):
         # print(f"Network check failed: {self._network_socket.errorString()}")
 
     def set_network_status(self, ok: bool):
-        self._apply_indicator(self.ui.logo_label_2, ok, text="네트워크")
+        """네트워크 상태를 설정하고 변경이 있으면 로그에 기록합니다."""
+        # 이전 상태 저장 (속성이 없으면 None으로 초기화)
+        prev_status = getattr(self, '_prev_network_status', None)
+
+        # 상태가 변경된 경우에만 로그 추가
+        if prev_status != ok:
+            # 현재 시간 포맷
+            timestamp = datetime.now().strftime('%H:%M:%S')
+
+            # 로그 메시지 생성
+            log_msg = f"{timestamp} - 네트워크: {'연결됨' if ok else '끊어짐'}"
+
+            # 로그 목록에 추가
+            if hasattr(self, 'connection_logs'):
+                self.connection_logs.append(log_msg)
+                # 최대 12개 항목만 유지
+                if len(self.connection_logs) > 12:
+                    self.connection_logs.pop(0)
+
+                # logo_3 위젯 업데이트
+                self.ui.conn_log.setText("연결 상태 로그:\n" + "\n".join(self.connection_logs))
+
+            # 현재 상태 저장
+            self._prev_network_status = ok
+
+        # 인디케이터 업데이트
+        self._set_indicator_icon(self.ui.logo_label_2, ok, "net")
 
 
     def _setup_heartbeat_monitor(self):
@@ -1926,29 +2026,221 @@ class MainWindow(QMainWindow):
             # print(f"하트비트 상태 확인 중 오류 발생: {e}")
 
     def set_camera_status(self, ok: bool):
-        self._apply_indicator(self.ui.hm_logo_2, ok, text="CAM")
+        """카메라 상태를 설정하고 변경이 있으면 로그에 기록합니다."""
+        prev_status = getattr(self, "_prev_camera_status", "INIT")
+
+        # bool → "GREEN" / None → "ORANGE" / False → "RED"
+        status_key = (
+            "GREEN" if ok is True else "RED" if ok is False else "ORANGE"
+        )
+
+        if prev_status != status_key:
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            log_msg = (
+                f"{timestamp} - 카메라: "
+                f"{'모두 정상' if ok is True else '모두 끊어짐' if ok is False else '일부 이상'}"
+            )
+
+            if hasattr(self, "connection_logs"):
+                self.connection_logs.append(log_msg)
+                if len(self.connection_logs) > 12:
+                    self.connection_logs.pop(0)
+                self.ui.conn_log.setText(
+                    "연결 상태 로그:\n" + "\n".join(self.connection_logs)
+                )
+
+            self._prev_camera_status = status_key
+
+        # 인디케이터 갱신
+        self._set_indicator_icon(self.ui.hm_logo_2, ok, "cam")
 
     def set_plc_status(self, ok: bool):
-        self._apply_indicator(self.ui.datetime_label_2, ok, text="PLC")
+        """PLC 상태를 설정하고 변경이 있으면 로그에 기록합니다."""
+        # 이전 상태 저장 (속성이 없으면 None으로 초기화)
+        prev_status = getattr(self, '_prev_plc_status', None)
+        # 상태가 변경된 경우에만 로그 추가
+        if prev_status != ok:
+            # 현재 시간 포맷
+            timestamp = datetime.now().strftime('%H:%M:%S')
 
-    def _apply_indicator(self, widget, ok: bool, text: str):
-        """라벨의 스타일을 연결 상태에 따라 변경합니다."""
-        widget.setText(text)
+            # 로그 메시지 생성
+            log_msg = f"{timestamp} - PLC: {'연결됨' if ok else '끊어짐'}"
 
-        ## [BEFORE] 하드코딩된 인라인 스타일 문자열
-        # if ok:
-        #     style = "background-color: #4CAF50; color: white; border-radius: 5px; padding: 5px;"
-        # else:
-        #     style = "background-color: #F44336; color: white; border-radius: 5px; padding: 5px;"
-        # widget.setStyleSheet(style)
+            # 로그 목록에 추가
+            if hasattr(self, 'connection_logs'):
+                self.connection_logs.append(log_msg)
+                # 최대 12개 항목만 유지
+                if len(self.connection_logs) > 12:
+                    self.connection_logs.pop(0)
 
-        # [NOW] 상태만 동적 프로퍼티로 표시 → QSS가 외형 적용
+                # logo_3 위젯 업데이트
+                self.ui.conn_log.setText("연결 상태 로그:\n" + "\n".join(self.connection_logs))
+
+            # 현재 상태 저장
+            self._prev_plc_status = ok
+
+        # 인디케이터 업데이트
+        self._set_indicator_icon(self.ui.datetime_label_2, ok, "plc")
+
+    def _apply_indicator(self, widget: QLabel, ok: bool, text: str):
+        # 텍스트/HTML 흔적 제거
+        widget.clear()
+        widget.setText("")
+        widget.setTextFormat(Qt.TextFormat.PlainText)
+
         widget.setProperty("indicator", True)
         widget.setProperty("status", "ok" if ok else "error")
+        widget.setStyleSheet("border:none; background:transparent;")
+        widget.setMouseTracking(False)
+        widget.setAttribute(Qt.WidgetAttribute.WA_Hover, False)
 
-        # 즉시 반영
-        widget.style().unpolish(widget)
-        widget.style().polish(widget)
+        # 아이콘 크기 키우기
+        icon_px = 36
+        widget.setFixedSize(icon_px, icon_px)
+        widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # 대상별 아이콘 경로
+        name = widget.objectName() or ""
+        if "logo_label_2" in name or text == "네트워크":
+            on_icon = resource_path("ui", "resources", "network_conn_icon.png")
+            off_icon = resource_path("ui", "resources", "network_conn_off_icon.png")
+            tip = f"네트워크: {'연결' if ok else '끊김'}"
+        elif "hm_logo_2" in name or text == "CAM":
+            on_icon = resource_path("ui", "resources", "cam_on.png")
+            off_icon = resource_path("ui", "resources", "cam_off.png")
+            tip = f"카메라: {'연결' if ok else '끊김'}"
+        elif "datetime_label_2" in name or text == "PLC":
+            on_icon = resource_path("ui", "resources", "plc_on.png")
+            off_icon = resource_path("ui", "resources", "plc_off.png")
+            tip = f"PLC: {'연결' if ok else '끊김'}"
+        else:
+            on_icon = resource_path("ui", "resources", "network_conn_icon.png")
+            off_icon = resource_path("ui", "resources", "network_conn_off_icon.png")
+            tip = f"{text}: {'연결' if ok else '끊김'}"
+
+        pm = QPixmap(on_icon if ok else off_icon)
+        if pm.isNull():
+            widget.setToolTip(f"{tip} (아이콘 없음)")
+            widget.clear()
+            return
+
+        widget.setPixmap(pm.scaled(
+            icon_px, icon_px,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        ))
+        widget.setToolTip(tip)
+
+    def _init_indicator_icons(self):
+        """인디케이터 라벨을 아이콘-only로 초기화(텍스트 제거, 고정 크기, 투명 배경)."""
+        for name in ("logo_label_2", "hm_logo_2", "datetime_label_2"):
+            lbl = getattr(self.ui, name, None)
+            if not lbl:
+                continue
+            lbl.setText("")  # 텍스트 제거
+            lbl.setFixedSize(32, 32)  # 더 크게
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet("border: none; background: transparent;")
+            lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    # 연결 상태 변경 로그를 관리하기 위한 간단한 리스트
+    def _setup_connection_log(self):
+        """
+        연결 상태 로그 설정
+        """
+        # 로그 항목을 저장할 리스트 초기화
+        self.connection_logs = []
+
+        self.ui.conn_log.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.ui.conn_log.setWordWrap(True)
+        self.ui.conn_log.setText("연결 상태 로그:")
+        self.ui.conn_log.raise_()  # ← 겹침 방지
+
+    def _set_indicator_icon(self, label: QLabel, ok: bool | None, kind: str):
+        """
+        kind: 'net' | 'cam' | 'plc'
+        ok:   True(정상)/False(오류)/None(일부 정상; cam만 사용)
+        """
+        label.setText("")  # 텍스트 절대 출력 안함
+
+        # 파일명 매핑
+        if kind == "net":
+            on_png = "network_conn_icon.png"
+            off_png = "network_conn_off_icon.png"
+            warn_png = off_png  # 네트워크는 warn 아이콘 없으면 off로 대체
+            tip_title = "네트워크"
+        elif kind == "cam":
+            on_png = "cam_on.png"
+            off_png = "cam_off.png"
+            warn_png = "cam_partial.png"  # 없으면 off로 자동 대체됨
+            tip_title = "카메라"
+        else:  # plc
+            on_png = "plc_on.png"
+            off_png = "plc_off.png"
+            warn_png = off_png
+            tip_title = "PLC"
+
+        filename = on_png if ok is True else warn_png if ok is None else off_png
+        path = resource_path("ui", "resources", filename)
+
+        pm = QPixmap(path)
+        if pm.isNull():
+            # 대체: 텍스트 비노출 유지 + 툴팁만
+            label.clear()
+            label.setToolTip(f"{tip_title}: {'연결' if ok else '끊김' if ok is False else '일부 이상'} (아이콘 없음)")
+            return
+
+        # 라벨 크기에 맞춰 비율 유지 스케일
+        target = label.size()
+        scaled = pm.scaled(
+            target,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        )
+        label.setPixmap(scaled)
+        label.setToolTip(f"{tip_title}: {'연결' if ok else '끊김' if ok is False else '일부 이상'}")
+
+    def _shrink_image_box(self, w: int, h: int):
+        lbl = self.ui.image_label
+        lbl.setMinimumSize(0, 0)  # .ui의 최소 크기(400x300) 해제
+        lbl.setMaximumSize(w, h)
+        lbl.setFixedSize(w, h)  # 딱 고정하고 싶으면
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+    def _place_conn_log_below_image(self):
+        """image_label 바로 아래에 conn_log를 고정 마진으로 배치"""
+        log = getattr(self.ui, "conn_log", None)
+        img = getattr(self.ui, "image_label", None)
+        cw = getattr(self.ui, "centralwidget", None)
+        if not (log and img and cw):
+            return
+
+        GAP = 12  # 이미지 아래 여백
+        DESIRED_H = 160  # 기본 높이(원하면 조절)
+        MIN_H = 80  # 너무 작아지면 숨기기 방지용 최소 높이
+        SIDE_MARGIN = 0  # 이미지 좌측에 딱 맞추고 싶으면 0
+
+        # 이미지 기준 좌표/크기
+        left = img.x() + SIDE_MARGIN
+        top = img.y() + img.height() + GAP
+        width = img.width()
+
+        # 중앙 위젯 높이 기준으로, 하단 여유(MARGIN_BOTTOM) 남기면서 높이 제한
+        MARGIN_BOTTOM = 12
+        max_h = max(0, cw.height() - top - MARGIN_BOTTOM)
+        height = min(DESIRED_H, max_h)
+
+        if height < MIN_H:
+            # 공간이 너무 없으면 가능한 만큼만 쓰거나, 필요시 숨김
+            height = max(0, max_h)
+            if height < 30:
+                log.hide()
+                return
+        log.show()
+
+        # 배치 반영
+        log.setGeometry(QRect(left, top, width, height))
+        log.raise_()  # 다른 위젯 위로
 
     # ------------------------------------------------------------------
     # 속도 표시
