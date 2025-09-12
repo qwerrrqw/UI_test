@@ -754,6 +754,8 @@ class AllDataDialog(QDialog):
         self.search_input.setPlaceholderText("검색어...")
         self.search_btn = QPushButton("검색", self)
         self.search_btn.clicked.connect(self._on_search_clicked)
+        self.keyboard_btn = QPushButton("화상 키보드", self)
+        self.keyboard_btn.clicked.connect(self._open_virtual_keyboard)
 
         filter_row.addWidget(QLabel("시작일:"))
         filter_row.addWidget(self.date_from)
@@ -762,6 +764,7 @@ class AllDataDialog(QDialog):
         filter_row.addWidget(self.search_field)
         filter_row.addWidget(self.search_input)
         filter_row.addWidget(self.search_btn)
+        filter_row.addWidget(self.keyboard_btn)
         layout.addLayout(filter_row)
 
         # 테이블
@@ -846,6 +849,17 @@ class AllDataDialog(QDialog):
         self._conn = None
         self._connect_db()
         self._load_all()
+
+    def _open_virtual_keyboard(self):
+        try:
+            if sys.platform.startswith('win'):
+                # For Windows, run the On-Screen Keyboard using 'start' to avoid blocking
+                os.system('start osk')
+            else:
+                # Inform user for other OSes since there's no universal command
+                QMessageBox.information(self, "알림", "이 기능은 Windows에서만 지원됩니다.\n다른 운영체제에서는 시스템의 화상 키보드를 수동으로 활성화해주세요.")
+        except Exception as e:
+            QMessageBox.warning(self, "오류", f"화상 키보드를 여는 데 실패했습니다: {e}")
 
     def _on_header_clicked(self, col: int):
         if self._sorting_guard:
