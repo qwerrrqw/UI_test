@@ -38,8 +38,13 @@ $RECYCLE.BIN/
 *.msix
 *.msm
 *.msp
+<<<<<<< Updated upstream
+=======
+.idea/
+>>>>>>> Stashed changes
 
 # Windows shortcuts
 *.lnk
+.venv/
 
 # End of https://www.toptal.com/developers/gitignore/api/windows,git
