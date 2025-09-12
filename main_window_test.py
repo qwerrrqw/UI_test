@@ -55,6 +55,9 @@ from PySide6.QtWidgets import (
     QCalendarWidget,
     QStyleOptionViewItem,
     QFileDialog,
+    QListWidget,
+    QListWidgetItem,
+    QDialogButtonBox
 )
 from PySide6.QtNetwork import QTcpSocket, QHostAddress
 from datetime import date as _date
@@ -1113,12 +1116,20 @@ class AllDataDialog(QDialog):
                 QMessageBox.critical(self, "오류", f"이미지 열기 실패: {str(e)}")
 
     def _export_to_csv(self):
-        """현재 테이블 데이터를 CSV 파일로 내보내기"""
-        # 파일 저장 대화상자
+        """현재 테이블 데이터를 CSV 파일로 내보내기(선택한 컬럼만)."""
+        # 1) 컬럼 선택
+        cols = self._choose_export_columns()
+        if cols is None:
+            return  # 취소
+        if not cols:
+            QMessageBox.information(self, "안내", "선택된 컬럼이 없습니다.")
+            return
+
+        # 2) 파일 저장 대화상자
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "CSV 파일 저장",
-            "",  # 기본 파일명 넣고 싶으면 여기 "export.csv" 같은 값
+            "",
             "CSV 파일 (*.csv);;모든 파일 (*.*)"
         )
         if not file_path:
@@ -1126,28 +1137,28 @@ class AllDataDialog(QDialog):
         if not file_path.lower().endswith(".csv"):
             file_path += ".csv"
 
+        # 3) 쓰기
         try:
             with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
                 wr = csv.writer(f)
 
-                # 헤더: 정렬 화살표(▲/▼) 제거
+                # 헤더: 선택한 컬럼만 + 정렬 화살표 제거
                 headers = []
-                for c in range(self.table.columnCount()):
+                for c in cols:
                     it = self.table.horizontalHeaderItem(c)
                     text = it.text() if it else ""
                     text = text.replace(" ▲", "").replace(" ▼", "")
                     headers.append(text)
                 wr.writerow(headers)
 
-                # 데이터
+                # 데이터: 선택한 컬럼만
                 for r in range(self.table.rowCount()):
                     row = []
-                    for c in range(self.table.columnCount()):
+                    for c in cols:
                         it = self.table.item(r, c)
                         if it is not None:
                             row.append(it.text())
                         else:
-                            # 셀 위젯(예: 이미지 경로 라벨) 처리
                             w = self.table.cellWidget(r, c)
                             if isinstance(w, QLabel):
                                 row.append(w.text())
@@ -1158,6 +1169,63 @@ class AllDataDialog(QDialog):
             QMessageBox.information(self, "내보내기 성공", f"저장됨:\n{file_path}")
         except Exception as e:
             QMessageBox.critical(self, "내보내기 실패", f"CSV 저장 중 오류:\n{e}")
+
+    def _choose_export_columns(self) -> list[int] | None:
+        """내보낼 컬럼을 체크박스로 선택하는 간단한 다이얼로그.
+        반환: 체크된 컬럼 인덱스 리스트(순서는 원래 순서), 취소 시 None."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("내보낼 컬럼 선택")
+        dlg.setModal(True)
+
+        v = QVBoxLayout(dlg)
+        v.addWidget(QLabel("CSV로 내보낼 컬럼을 선택하세요.", dlg))
+
+        lst = QListWidget(dlg)
+        lst.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        # 현재 헤더를 기반으로 항목 생성 (▲/▼ 제거)
+        for col in range(self.table.columnCount()):
+            item = QListWidgetItem()
+            hdr_it = self.table.horizontalHeaderItem(col)
+            text = (hdr_it.text() if hdr_it else f"컬럼 {col}").replace(" ▲", "").replace(" ▼", "")
+            item.setText(text)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)  # 기본: 전부 선택
+            item.setData(Qt.ItemDataRole.UserRole, col)
+            lst.addItem(item)
+        v.addWidget(lst)
+
+        # 버튼들
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, parent=dlg)
+        v.addWidget(btns)
+
+        # 선택/해제 단축 버튼(선택)
+        hb = QHBoxLayout()
+        sel_all = QPushButton("전체 선택", dlg)
+        clr_all = QPushButton("전체 해제", dlg)
+        hb.addWidget(sel_all)
+        hb.addWidget(clr_all)
+        v.insertLayout(2, hb)
+
+        def _set_all(state: Qt.CheckState):
+            for i in range(lst.count()):
+                lst.item(i).setCheckState(state)
+
+        sel_all.clicked.connect(lambda: _set_all(Qt.CheckState.Checked))
+        clr_all.clicked.connect(lambda: _set_all(Qt.CheckState.Unchecked))
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None
+
+        # 체크된 컬럼만 모아 반환 (원래 컬럼 순서 유지)
+        chosen: list[int] = []
+        for i in range(lst.count()):
+            it = lst.item(i)
+            if it.checkState() == Qt.CheckState.Checked:
+                chosen.append(int(it.data(Qt.ItemDataRole.UserRole)))
+        return chosen
+
 
     def _load_all(self):
         """
