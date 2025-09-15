@@ -190,11 +190,27 @@ QLabel[indicator=true] {
 }
 
 /* 상태별 */
-QLabel[indicator=true][status="ok"]    { background-color: #4CAF50; } /* 초록 */
-QLabel[indicator=true][status="error"] { background-color: #F44336; } /* 빨강 */
+/*QLabel[indicator=true][status="ok"]    { background-color: #4CAF50; } !* 초록 *!*/
+/*QLabel[indicator=true][status="error"] { background-color: #F44336; } !* 빨강 *!*/
+
+QLabel[indicator=true] {
+  background: transparent;
+  border: none;
+  padding: 0;             /* 상하좌우 여백 제거 */
+}
+/*QLabel[indicator=true]:hover { background-color: #E9ECEF; }*/
 
 /* (선택) 경고 상태도 쓰고 싶다면 */
 QLabel[indicator=true][status="warn"]  { background-color: #FFC107; color: #212529; }
+
+QLabel#conn_log {
+  background-color: #222222;
+  color: #E0E0E0;
+  border: 1px solid #3E4249;  /* 필요 없으면 none */
+  padding: 5px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 9pt;
+}
 
 /* ===== QMessageBox (전역 적용) ===== */
 QMessageBox {
