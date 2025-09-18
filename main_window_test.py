@@ -678,57 +678,6 @@ class AllDataDialog(QDialog):
 
         ## 스타일 스코프용 objectName 부여(중요)
         self.setObjectName("AllDataDialog")
-        ## 스타일 시트 코드
-        # light_theme_style = """
-        #     QDialog {
-        #         background-color: #f8f9fa; /* 대화상자 전체 배경 (밝은 회색) */
-        #         color: #212529; /* 기본 글자색 (어두운 회색) */
-        #     }
-        #     QLabel {
-        #         background-color: transparent; /* 라벨 배경은 투명하게 */
-        #     }
-        #     QLineEdit, QDateEdit, QComboBox {
-        #         background-color: #ffffff; /* 입력 필드 배경 (흰색) */
-        #         border: 1px solid #ced4da;
-        #         border-radius: 4px;
-        #         padding: 5px;
-        #     }
-        #     QPushButton {
-        #         background-color: #e9ecef;
-        #         border: 1px solid #ced4da;
-        #         padding: 5px 10px;
-        #         border-radius: 4px;
-        #     }
-        #     QPushButton:hover {
-        #         background-color: #dee2e6;
-        #     }
-        #     QPushButton:pressed {
-        #         background-color: #ced4da;
-        #     }
-        #     QTableWidget {
-        #         background-color: #ffffff;
-        #         alternate-background-color: #f1f3f5;
-        #         gridline-color: #dee2e6;
-        #         border: 1px solid #ced4da;
-        #     }
-        #     QHeaderView::section {
-        #         background-color: #e9ecef; /* 테이블 헤더 배경 */
-        #         color: #212529;
-        #         font-weight: bold;
-        #         padding: 6px;
-        #         border: none;
-        #         border-bottom: 1px solid #dee2e6;
-        #     }
-        #     QTableWidget::item:selected {
-        #         background-color: #0d6efd; /* 선택된 셀 배경 (파란색) */
-        #         color: #ffffff; /* 선택된 셀 글자 (흰색) */
-        #     }
-        #     QTableWidget::item {
-        #         text-align: center; /* 텍스트 중앙 정렬 시도 - 스타일시트만으로는 완전히 적용 안됨 */
-        #     }
-        # """
-        # 위에서 분리한 .qss 파일을 불러와 적용하는 코드로 변경될 부분입니다.
-        # self.setStyleSheet(light_theme_style)
 
         # 위젯(이 아래 부분은 위젯의 '구조'와 '동작'에 관한 것이므로 분리 대상이 아님)
         layout = QVBoxLayout(self)
@@ -1342,6 +1291,15 @@ class AllDataDialog(QDialog):
         self.table.setRowCount(len(rows))
         for i, row in enumerate(rows, start=1):
             # 데이터 설정
+            # items = [
+            #     self._NumericItem(str(i)),
+            #     QTableWidgetItem(str(row.get("pid", ""))),
+            #     QTableWidgetItem(str(row.get("sscc", ""))),
+            #     QTableWidgetItem(str(row.get("destination", ""))),
+            #     QTableWidgetItem(str(row.get("barcode", ""))),
+            #     QTableWidgetItem(str(row.get("error_reason", ""))),
+            #     QTableWidgetItem(str(row.get("image_path", ""))),
+            # ]
             items = [
                 self._NumericItem(str(i)),
                 QTableWidgetItem(str(row.get("pid", ""))),
@@ -1349,7 +1307,7 @@ class AllDataDialog(QDialog):
                 QTableWidgetItem(str(row.get("destination", ""))),
                 QTableWidgetItem(str(row.get("barcode", ""))),
                 QTableWidgetItem(str(row.get("error_reason", ""))),
-                QTableWidgetItem(str(row.get("image_path", ""))),
+                QTableWidgetItem(""),  # ★ 셀 위젯(라벨)만 보이게 아이템 텍스트는 비움
             ]
 
             # 처리 상태 색 지정 (아이템을 테이블에 넣기 전에)
@@ -1380,11 +1338,12 @@ class AllDataDialog(QDialog):
                 img_item = self.table.item(i - 1, 6)
                 if img_item:
                     img_item.setToolTip("더블클릭하여 이미지 열기")
+                    img_item.setText("")  # ★ 혹시 모를 겹침 방지(명시적으로 비우기)
 
                 # ✅ 라벨을 셀 위젯으로 올려 색상을 QSS로 제어
                 lbl = QLabel(img_path)
                 lbl.setObjectName("ImagePathLabel")
-                lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
                 lbl.setToolTip("더블클릭하여 이미지 열기")
                 # 파일 존재 여부를 동적 프로퍼티로 표시 → QSS에서 색상 분기
                 exists = os.path.exists(img_path)
@@ -1429,10 +1388,24 @@ class MainWindow(QMainWindow):
         self.tz = tz
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        print("data_table objectName =", self.ui.data_table.objectName())
         self._pack_m1panel()  ## ⬅️ 추가: 패널 재구성
         QTimer.singleShot(0, self._apply_logo)
         self._init_indicator_icons()
         self._shrink_image_box(420, 320)
+        QTimer.singleShot(0, self._place_conn_log_below_image)
+        QTimer.singleShot(0, self._realign_right_panel_to_image)
+
+        # Qt의 QSS가 테이블 셀 배경을 항상 확실히 먹이지 못하는 케이스가 있어 강제로 수동 설정
+        p = self.ui.data_table.palette()
+        p.setColor(QPalette.ColorRole.Base, QColor("#2C2F36"))
+        p.setColor(QPalette.ColorRole.AlternateBase, QColor("#34383F"))
+        p.setColor(QPalette.ColorRole.Text, QColor("#E0E0E0"))
+        p.setColor(QPalette.ColorRole.Highlight, QColor("#0D6EFD"))
+        p.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+        self.ui.data_table.setPalette(p)
+        self.ui.data_table.setAlternatingRowColors(True)
+        self.ui.data_table.setShowGrid(True)
 
         ## ★ 자동생성 파일의 인라인 스타일 제거(전역 QSS가 우선 적용되게)
         #    특정 위젯은 유지하고 싶다면 keep 집합에 objectName을 추가하세요.
@@ -2133,15 +2106,17 @@ class MainWindow(QMainWindow):
 
     def _init_indicator_icons(self):
         """인디케이터 라벨을 아이콘-only로 초기화(텍스트 제거, 고정 크기, 투명 배경)."""
+        ICON_PX = 32  # 원하면 36으로만 바꿔도 또렷함 체감↑
         for name in ("logo_label_2", "hm_logo_2", "datetime_label_2"):
             lbl = getattr(self.ui, name, None)
             if not lbl:
                 continue
             lbl.setText("")  # 텍스트 제거
-            lbl.setFixedSize(32, 32)  # 더 크게
+            lbl.setFixedSize(ICON_PX, ICON_PX)
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet("border: none; background: transparent;")
             lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            lbl.setScaledContents(False)  # 라벨 내부에서 재스케일 금지
 
     # 연결 상태 변경 로그를 관리하기 위한 간단한 리스트
     def _setup_connection_log(self):
@@ -2158,21 +2133,21 @@ class MainWindow(QMainWindow):
 
     def _set_indicator_icon(self, label: QLabel, ok: bool | None, kind: str):
         """
-        kind: 'net' | 'cam' | 'plc'
-        ok:   True(정상)/False(오류)/None(일부 정상; cam만 사용)
-        """
-        label.setText("")  # 텍스트 절대 출력 안함
+            kind: 'net' | 'cam' | 'plc'
+            ok:   True(정상)/False(오류)/None(일부 정상; cam만 사용)
+            """
+        label.setText("")  # 텍스트 절대 출력 안 함
 
         # 파일명 매핑
         if kind == "net":
             on_png = "network_conn_icon.png"
             off_png = "network_conn_off_icon.png"
-            warn_png = off_png  # 네트워크는 warn 아이콘 없으면 off로 대체
+            warn_png = off_png
             tip_title = "네트워크"
         elif kind == "cam":
             on_png = "cam_on.png"
             off_png = "cam_off.png"
-            warn_png = "cam_partial.png"  # 없으면 off로 자동 대체됨
+            warn_png = "cam_partial.png"
             tip_title = "카메라"
         else:  # plc
             on_png = "plc_on.png"
@@ -2183,21 +2158,26 @@ class MainWindow(QMainWindow):
         filename = on_png if ok is True else warn_png if ok is None else off_png
         path = resource_path("ui", "resources", filename)
 
-        pm = QPixmap(path)
-        if pm.isNull():
-            # 대체: 텍스트 비노출 유지 + 툴팁만
+        pm_src = QPixmap(path)
+        if pm_src.isNull():
             label.clear()
             label.setToolTip(f"{tip_title}: {'연결' if ok else '끊김' if ok is False else '일부 이상'} (아이콘 없음)")
             return
 
-        # 라벨 크기에 맞춰 비율 유지 스케일
-        target = label.size()
-        scaled = pm.scaled(
-            target,
+        # 고DPI 고려: 라벨 픽셀 크기 × 장치 배율로 '한 번만' 스케일
+        dpr = getattr(label, "devicePixelRatioF", lambda: 1.0)()
+        tw = max(1, int(label.width() * dpr))
+        th = max(1, int(label.height() * dpr))
+
+        img = pm_src.toImage().scaled(
+            tw, th,
             Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
+            Qt.TransformationMode.FastTransformation  # 작은 아이콘엔 Fast가 또렷함
         )
-        label.setPixmap(scaled)
+        pm = QPixmap.fromImage(img)
+        pm.setDevicePixelRatio(dpr)
+
+        label.setPixmap(pm)
         label.setToolTip(f"{tip_title}: {'연결' if ok else '끊김' if ok is False else '일부 이상'}")
 
     def _shrink_image_box(self, w: int, h: int):
@@ -2208,39 +2188,57 @@ class MainWindow(QMainWindow):
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def _place_conn_log_below_image(self):
-        """image_label 바로 아래에 conn_log를 고정 마진으로 배치"""
+        """image_label 바로 아래에 conn_log를 고정 마진으로 배치(타이트 버전)."""
         log = getattr(self.ui, "conn_log", None)
         img = getattr(self.ui, "image_label", None)
         cw = getattr(self.ui, "centralwidget", None)
         if not (log and img and cw):
             return
 
-        GAP = 12  # 이미지 아래 여백
-        DESIRED_H = 160  # 기본 높이(원하면 조절)
-        MIN_H = 80  # 너무 작아지면 숨기기 방지용 최소 높이
-        SIDE_MARGIN = 0  # 이미지 좌측에 딱 맞추고 싶으면 0
+        GAP = 6  # 이미지 아래 여백(줄임)
+        DESIRED_H = 120  # 로그 상자 기본 높이(줄임)
+        MIN_H = 80  # 최소 높이
+        SIDE_MARGIN = 0  # 좌측을 이미지에 딱 맞춤
+        MARGIN_BOTTOM = 8  # 하단 마진(줄임)
 
-        # 이미지 기준 좌표/크기
         left = img.x() + SIDE_MARGIN
         top = img.y() + img.height() + GAP
         width = img.width()
 
-        # 중앙 위젯 높이 기준으로, 하단 여유(MARGIN_BOTTOM) 남기면서 높이 제한
-        MARGIN_BOTTOM = 12
         max_h = max(0, cw.height() - top - MARGIN_BOTTOM)
         height = min(DESIRED_H, max_h)
-
         if height < MIN_H:
-            # 공간이 너무 없으면 가능한 만큼만 쓰거나, 필요시 숨김
             height = max(0, max_h)
             if height < 30:
                 log.hide()
                 return
         log.show()
-
-        # 배치 반영
         log.setGeometry(QRect(left, top, width, height))
-        log.raise_()  # 다른 위젯 위로
+        log.raise_()
+
+    def _realign_right_panel_to_image(self, gap_x: int = 12, right_margin: int = 12):
+        """인식 이미지(label) 오른쪽에 '작업 현황' 타이틀/테이블을 붙여 정렬."""
+        cw = getattr(self.ui, "centralwidget", None)
+        img = getattr(self.ui, "image_label", None)
+        tbl = getattr(self.ui, "data_table", None)
+        title = getattr(self.ui, "image_title_2", None)
+        if not (cw and img and tbl and title):
+            return
+
+        new_left = img.x() + img.width() + gap_x
+        avail_w = max(0, cw.width() - new_left - right_margin)
+
+        # 타이틀(작업 현황) 위치/폭 조정
+        title_h = title.height()
+        title.setGeometry(QRect(new_left, title.y(), avail_w, title_h))
+
+        # 테이블 위치/폭 조정 (세로 크기는 그대로 유지)
+        tbl.setGeometry(QRect(new_left, tbl.y(), avail_w, tbl.height()))
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._place_conn_log_below_image()
+        self._realign_right_panel_to_image()
 
     # ------------------------------------------------------------------
     # 속도 표시
@@ -2339,24 +2337,55 @@ class MainWindow(QMainWindow):
 # 실행 진입점
 # ---------------------------------------------------------------------------
 
+# def main():
+#     # 고DPI 픽스맵 사용 → 작은 아이콘 선명도 개선
+#     if QApplication.instance() is None:
+#         QGuiApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
+#     app = QApplication.instance() or QApplication(sys.argv)
+#     apply_global_stylesheet(app)
+#
+#     here = Path(__file__).resolve().parent  # ui/
+#     enc_path = here / "path.enc"  # ui/path.enc
+#
+#     print(f"SYSTEM_PATH={os.environ.get('SYSTEM_PATH')}")
+#     print(f"enc_path={enc_path} exists={enc_path.is_file()}")
+#
+#     try:
+#         cfg = AppConfig.load(enc_path=str(enc_path))
+#     except Exception as e:
+#         m = QMessageBox(QMessageBox.Icon.Critical,
+#                         "설정 로드 오류",
+#                         f"{type(e).__name__}: {e}",
+#                         QMessageBox.StandardButton.Ok)
+#         m.setDetailedText(traceback.format_exc())
+#         m.exec()
+#         return 1
+#
+#     tz = resolve_kst()
+#     win = MainWindow(cfg, tz)
+#     win.show()
+#     return app.exec()
+
 def main():
+    if QApplication.instance() is None:
+        QGuiApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
     app = QApplication.instance() or QApplication(sys.argv)
+
+    # 내 파일 바로 옆의 style.css를 우선 지정해 강제 적용
+    here = Path(__file__).resolve().parent
+    os.environ.setdefault("APP_STYLE_PATH", str(here / "style.css"))
+
     apply_global_stylesheet(app)
 
-    here = Path(__file__).resolve().parent  # ui/
-    enc_path = here / "path.enc"            # ui/path.enc  ← 네가 말한 위치
-
-    # 디버그: 환경변수와 경로 출력
+    enc_path = here / "path.enc"
     print(f"SYSTEM_PATH={os.environ.get('SYSTEM_PATH')}")
     print(f"enc_path={enc_path} exists={enc_path.is_file()}")
 
     try:
         cfg = AppConfig.load(enc_path=str(enc_path))
     except Exception as e:
-        m = QMessageBox(QMessageBox.Icon.Critical,
-                        "설정 로드 오류",
-                        f"{type(e).__name__}: {e}",  # 타입까지 표시
-                        QMessageBox.StandardButton.Ok)
+        m = QMessageBox(QMessageBox.Icon.Critical, "설정 로드 오류",
+                        f"{type(e).__name__}: {e}", QMessageBox.StandardButton.Ok)
         m.setDetailedText(traceback.format_exc())
         m.exec()
         return 1

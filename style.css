@@ -107,40 +107,6 @@ QDialog#AllDataDialog QTableWidget QLabel#ImagePathLabel {
   /* 가운데 정렬은 코드에서 setAlignment가 더 확실함 */
 }
 
-/* ===== Main table (data_table) — BEFORE와 동일한 다크 팔레트 ===== */
-QTableWidget#DataTable {
-  background-color: #2C2F36;            /* 테이블 전체 배경색 */
-  alternate-background-color: #34383F;  /* 교차 행 배경색 */
-  gridline-color: #3E4249;              /* 그리드 라인 색상 */
-  color: #E0E0E0;                       /* 기본 글자색 */
-  border: 1px solid #3E4249;
-  font-size: 13px;
-  selection-background-color: #0D6EFD;  /* 선택 배경 */
-  selection-color: #FFFFFF;             /* 선택 텍스트 */
-}
-
-/* 헤더 */
-QTableWidget#DataTable QHeaderView::section {
-  background-color: #393E46;  /* 헤더 배경 (짙은 회색) */
-  color: #F1F3F5;             /* 헤더 글자색 (밝은 회색) */
-  font-weight: bold;
-  padding: 6px;
-  border: none;
-  border-bottom: 1px solid #4A4E57;
-}
-
-/* 셀 */
-QTableWidget#DataTable::item {
-  border-bottom: 1px solid #3E4249;
-  padding: 5px;
-}
-
-/* 선택 상태 */
-QTableWidget#DataTable::item:selected {
-  background-color: #0D6EFD;
-  color: #FFFFFF;
-}
-
 /* ===== Center name label (blink) — BEFORE와 동일 ===== */
 QLabel#center_name {
   font-size: 42px;
@@ -274,7 +240,7 @@ QLabel#count_label {
 QLabel#datetime_label { font-size: 22px; color: #ffffff; font-weight: bold; }
 
 /* 메인윈도우 배경 색상 */
-QMainWindow#MainWindow { background-color: #2C2F36; }
+QMainWindow#MainWindow { background-color: #41444A; }
 
 /* ImageViewerDialog: 스크롤영역 배경을 viewport에 적용 */
 QDialog#ImageViewerDialog QScrollArea { border: 1px solid #ced4da; background-color: transparent; }
@@ -333,4 +299,80 @@ QDialog#AllDataDialog QComboBox {
   border: 1px solid #ced4da;
   border-radius: 4px;
   padding: 5px;
+}
+
+/* ===== data_table: 다크 테마 확정(베이스 클래스 대상으로) ===== */
+
+/* 1) 실제 페인팅되는 viewport 배경 */
+QMainWindow#MainWindow QAbstractScrollArea#data_table::viewport {
+  background-color: #2C2F36;
+}
+
+/* 2) 셀/그리드/선택색 (QAbstractItemView 계열) */
+QMainWindow#MainWindow QAbstractItemView#data_table {
+  color: #E0E0E0;
+  gridline-color: #3E4249;
+  selection-background-color: #0D6EFD;
+  selection-color: #FFFFFF;
+  font-size: 13px;
+  border: 1px solid #3E4249; /* 외곽 테두리 */
+}
+
+/* 3) 셀 배경 직접 지정 (기본/교차행) */
+QMainWindow#MainWindow QAbstractItemView#data_table::item {
+  background-color: #2C2F36;   /* 기본 행 */
+  border-bottom: 1px solid #3E4249;
+  padding: 5px;
+}
+QMainWindow#MainWindow QAbstractItemView#data_table::item:alternate {
+  background-color: #34383F;   /* 교차 행 */
+}
+
+/* 4) 선택 상태 */
+QMainWindow#MainWindow QAbstractItemView#data_table::item:selected {
+  background-color: #0D6EFD;
+  color: #FFFFFF;
+}
+
+/* 5) 헤더/코너 */
+QMainWindow#MainWindow QTableView#data_table QHeaderView::section {
+  background-color: #393E46;
+  color: #F1F3F5;
+  font-weight: bold;
+  padding: 6px;
+  border: none;
+  border-bottom: 1px solid #4A4E57;
+}
+QMainWindow#MainWindow QTableCornerButton::section {
+  background-color: #393E46;
+  border: none;
+}
+
+/* ===== data_table: 헤더 섹션 경계(세로 라인) 추가 — 컬럼 그리드와 정렬 ===== */
+QMainWindow#MainWindow QTableView#data_table QHeaderView::section {
+  background-color: #393E46;
+  color: #F1F3F5;
+  font-weight: bold;
+  padding: 6px;
+  border: none;
+  border-bottom: 1px solid #3E4249;  /* 아래 컬럼 그리드와 동일 색상 */
+  border-right: 1px solid #6E747C;   /* ← 헤더 섹션 사이 세로 라인 */
+}
+
+/* 헤더의 좌측 외곽도 라인 맞추고 싶으면 */
+QMainWindow#MainWindow QTableView#data_table QHeaderView::section:first {
+  border-left: none;
+}
+
+QMainWindow#MainWindow QTableView#data_table QHeaderView::section:last {
+  border-right: none;    /* 맨 오른쪽 격벽 제거 */
+}
+
+/* 좌상단 코너(행/열 헤더 만나는 부분)도 동일 라인 적용 */
+QMainWindow#MainWindow QTableCornerButton::section {
+  background-color: #393E46;
+  border: none;
+  border-right: 1px solid #6E747C;
+  border-right: none;
+  border-bottom: 1px solid #4A4E57;  /* 아래 라인은 기존과 동일하게 유지 */
 }
