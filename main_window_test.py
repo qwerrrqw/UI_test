@@ -1952,51 +1952,85 @@ class MainWindow(QMainWindow):
 
     def _check_heartbeat_status(self):
         """
-        heartbeat_status.json 파일을 읽어 UI의 연결 상태 표시등을 업데이트합니다.
-        마지막 신호 수신 시간이 10초 이내일 경우 '정상'으로 간주합니다.
+        heartbeat_status.json을 읽어 연결 상태를 갱신한다.
+
+        카메라(camera)
+          - 단일(JSON: {"camera": {"last_seen": "..."}})과
+            다중(JSON: {"camera": {"192.168.x.x": {"last_seen": "..."}, ...}}) 모두 지원
+          - 각 카메라의 last_seen이 10초 이내면 OK
+          - 판정:
+              * 모두 OK      → True
+              * 모두 FAIL    → False
+              * 혼재(일부 OK) → None
+
+        PLC
+          - 단일 {"PLC": {"last_seen": "..."}}만 확인하여 10초 이내면 True, 아니면 False
         """
         try:
-            # heartbeat_status.json 파일의 경로를 설정합니다. (필요시 경로 수정)
             status_file_path = Path("C:/Users/USER/Desktop/1DT/heartbeat_status.json")
-
             if not status_file_path.exists():
-                # 파일이 없으면 두 상태 모두 '연결 끊김'으로 처리
                 self.set_camera_status(False)
                 self.set_plc_status(False)
                 return
 
-            with open(status_file_path, 'r', encoding='utf-8') as f:
-                heartbeat_data = json.load(f)
+            with open(status_file_path, "r", encoding="utf-8") as f:
+                hb = json.load(f)
 
             now = datetime.now()
-            connection_timeout = timedelta(seconds=10)
+            timeout = timedelta(seconds=10)
 
-            # 카메라 상태 확인
-            camera_info = heartbeat_data.get('camera', {})
-            camera_last_seen_str = camera_info.get('last_seen')
-            is_camera_ok = False
-            if camera_last_seen_str:
-                last_seen_dt = datetime.strptime(camera_last_seen_str, '%Y-%m-%d %H:%M:%S')
-                if (now - last_seen_dt) <= connection_timeout:
-                    is_camera_ok = True
-            self.set_camera_status(is_camera_ok)
+            def parse_dt(s: str):
+                """허용 포맷을 시도하며 파싱."""
+                if not s:
+                    return None
+                s = s.strip()
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+                    try:
+                        return datetime.strptime(s, fmt)
+                    except ValueError:
+                        pass
+                return None
 
-            # PLC 상태 확인 (JSON 파일의 키가 'PLC'이므로 주의)
-            plc_info = heartbeat_data.get('PLC', {})
-            plc_last_seen_str = plc_info.get('last_seen')
-            is_plc_ok = False
-            if plc_last_seen_str:
-                last_seen_dt = datetime.strptime(plc_last_seen_str, '%Y-%m-%d %H:%M:%S')
-                if (now - last_seen_dt) <= connection_timeout:
-                    is_plc_ok = True
-            self.set_plc_status(is_plc_ok)
+            # ------------------ 카메라 판정 ------------------
+            cam_block = hb.get("camera", {})
+            last_seens: list[str] = []
 
-        except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError) as e:
-            # 파일 읽기 오류 발생 시 모든 연결 상태를 '끊김'으로 처리
+            if isinstance(cam_block, dict) and "last_seen" in cam_block:
+                # 단일 구조
+                last_seens.append(cam_block.get("last_seen"))
+            elif isinstance(cam_block, dict):
+                # 다중 구조: 각 항목(dict)에 last_seen이 있으면 수집
+                for v in cam_block.values():
+                    if isinstance(v, dict) and "last_seen" in v:
+                        last_seens.append(v.get("last_seen"))
+
+            oks: list[bool] = []
+            for ts in last_seens:
+                dt = parse_dt(ts) if isinstance(ts, str) else None
+                ok = bool(dt and (now - dt) <= timeout)
+                oks.append(ok)
+
+            if not oks:
+                cam_status = False  # 정보가 없으면 오류로 간주
+            elif all(oks):
+                cam_status = True  # 전부 OK
+            elif any(oks):
+                cam_status = None  # 혼재
+            else:
+                cam_status = False  # 전부 FAIL
+
+            self.set_camera_status(cam_status)
+
+            # ------------------ PLC 판정 ------------------
+            plc_info = hb.get("PLC", {})
+            plc_last_seen_str = plc_info.get("last_seen")
+            plc_dt = parse_dt(plc_last_seen_str) if isinstance(plc_last_seen_str, str) else None
+            plc_ok = bool(plc_dt and (now - plc_dt) <= timeout)
+            self.set_plc_status(plc_ok)
+
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError):
             self.set_camera_status(False)
             self.set_plc_status(False)
-            # 필요하다면 여기에 오류 로깅 코드를 추가할 수 있습니다.
-            # print(f"하트비트 상태 확인 중 오류 발생: {e}")
 
     def set_camera_status(self, ok: bool):
         """카메라 상태를 설정하고 변경이 있으면 로그에 기록합니다."""
