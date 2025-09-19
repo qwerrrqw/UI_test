@@ -376,3 +376,46 @@ QMainWindow#MainWindow QTableCornerButton::section {
   border-right: none;
   border-bottom: 1px solid #4A4E57;  /* 아래 라인은 기존과 동일하게 유지 */
 }
+
+/* ===== AllDataDialog 달력: 상단 네비게이션 바/요일 헤더 색 교체 ===== */
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar QWidget#qt_calendar_navigationbar {
+  background-color: #e9ecef;         /* 상단 바 배경 */
+  border-bottom: 1px solid #ced4da;
+}
+
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar QToolButton {
+  background: transparent;
+  color: #212529;                     /* 버튼/월-연도 텍스트 */
+  border: none;
+  padding: 4px 8px;
+  font-weight: 600;
+}
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar QToolButton:hover {
+  background-color: #dee2e6;
+}
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar QToolButton:pressed {
+  background-color: #ced4da;
+}
+
+/* 이전/다음 달 화살표 버튼 크기 살짝 키우기(선택) */
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar QToolButton#qt_calendar_prevmonth,
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar QToolButton#qt_calendar_nextmonth {
+  min-width: 28px;
+  min-height: 24px;
+}
+
+/* 요일 헤더(월,화,...) */
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar QTableView QHeaderView::section {
+  background-color: #e9ecef;
+  color: #495057;
+  font-weight: 600;
+  padding: 6px;
+  border: none;
+  border-bottom: 1px solid #ced4da;
+}
+
+/* 날짜 그리드(이미 기본 설정 있으나 재확인) */
+QDialog#AllDataDialog QCalendarWidget#AllDataCalendar QAbstractItemView {
+  selection-background-color: #0d6efd;
+  selection-color: #ffffff;
+}
