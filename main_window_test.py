@@ -28,7 +28,7 @@ from PySide6.QtCore import (
     QDate,
     QRect
 )
-from PySide6.QtGui import QPixmap, QColor, QFontMetrics ,QBrush, QPalette ,QGuiApplication
+from PySide6.QtGui import QPixmap, QColor, QFontMetrics ,QBrush, QPalette ,QGuiApplication,QTextOption
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -58,7 +58,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QListWidget,
     QListWidgetItem,
-    QDialogButtonBox
+    QPlainTextEdit
 )
 from PySide6.QtNetwork import QTcpSocket, QHostAddress
 from datetime import date as _date
@@ -154,24 +154,34 @@ def resolve_kst():
     except ZoneInfoNotFoundError:
         return _TZ(timedelta(hours=9), name="KST")
 
-def bg_color_for_status(text: str) -> QColor | None:
+def bg_color_for_status(text: str, *, allow_green: bool = True) -> QColor | None:
     """
-    상태 텍스트에 맞는 배경색을 반환.
-    - '작업 완료'/'OK' 계열 → 초록
-    - 'NG'/'ERROR' 계열 → 빨강
-    - '보류/HOLD/WARN' 계열 → 노랑
-    매칭 없으면 None
+    결과 텍스트 전용 최소 매핑:
+      - 'NG'        → 연한 빨강
+      - '작업 완료'  → 연한 초록
+      - '작업중'    → 연한 노랑
+      - 그 외       → 색 없음
     """
     t = (text or "").strip()
     if not t:
         return None
-    if t in {"작업 완료", "완료", "정상"} or t.upper() in {"OK", "PASS"}:
-        return QColor("#C8FEC8")  # green
-    if t == "NG" or t.upper() in {"NG", "ERROR", "FAIL", "REJECT"}:
-        return QColor("#FEC7C8")  # red
-    if t in {"보류", "대기"} or t.upper() in {"HOLD", "WARN", "PENDING"}:
-        return QColor("#FFC107")  # amber
+
+    if t == "NG":
+        return QColor(255, 200, 200)   # red-ish
+    if allow_green and t == "작업 완료":
+        return QColor(200, 255, 200)   # green-ish
+    if t == "작업중":
+        return QColor(255, 255, 200)   # yellow-ish
+
     return None
+
+class _CompatLogView(QPlainTextEdit):
+    """QLabel 대체용: QLabel처럼 setText(...)를 그대로 쓸 수 있게 래핑."""
+    def setText(self, s: str) -> None:             # QLabel 호환
+        self.setPlainText(s)
+
+    def text(self) -> str:                          # 필요시 QLabel 호환
+        return self.toPlainText()
 
 # ---- 검색 헬퍼 ---------------------------------------------------
 STATUS_SYNONYMS = {
@@ -369,6 +379,10 @@ STATE_MOUSEOVER = getattr(StateEnum, "State_MouseOver")
 STATE_SELECTED  = getattr(StateEnum, "State_Selected")
 
 class StatusBGDelegate(QStyledItemDelegate):
+    def __init__(self, parent=None, *, allow_green: bool = True):
+        super().__init__(parent)
+        self.allow_green = allow_green
+
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         # 처리 상태 컬럼 정렬을 가운데로
@@ -376,37 +390,31 @@ class StatusBGDelegate(QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         text = (index.data() or "").strip()
-        bg = bg_color_for_status(text)
+        bg = bg_color_for_status(text, allow_green=self.allow_green)
 
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
 
-        opt.state = opt.state & ~STATE_MOUSEOVER
+        # 타입체커 회피
+        o = cast(Any, opt)
+        o.state = o.state & ~QStyle.StateFlag.State_MouseOver
 
-        if bg and not (opt.state & STATE_SELECTED):
-            o = cast(Any, opt)                 # ✅ 타입 체커 무시
+        if bg and not (o.state & QStyle.StateFlag.State_Selected):
             painter.save()
-            painter.fillRect(o.rect, bg)       # rect 경고 사라짐
+            painter.fillRect(o.rect, bg)
             painter.restore()
-            o.palette.setColor(QPalette.ColorRole.Text, QColor("#00000"))  # palette 경고 사라짐
 
         super().paint(painter, opt, index)
 
-def apply_status_cell_colors(item: QTableWidgetItem, *, text_color: str = "#000000") -> None:
-    """
-    상태 문자열(item.text())를 보고 배경색을 칠하고,
-    글자색은 기본 검정(또는 지정)으로 통일한다.
-    bg_color_for_status(text) → QColor | None 이라고 가정.
-    """
+def apply_status_cell_colors(item: QTableWidgetItem, *, text_color: str = "#000000", allow_green: bool = True) -> None:
     text = (item.text() or "").strip()
-    bg = bg_color_for_status(text)
+    bg = bg_color_for_status(text, allow_green=allow_green)
     if bg is not None:
         item.setBackground(QBrush(bg))
         item.setForeground(QBrush(QColor(text_color)))
     else:
-        # 필요하면 기본으로 되돌리기 (선택)
-        item.setBackground(QBrush())   # clear
-        item.setForeground(QBrush())   # clear
+        item.setBackground(QBrush())
+        item.setForeground(QBrush())
 
 # ---------------------------------------------------------------------------
 # 데이터 모델 정의
@@ -720,7 +728,7 @@ class AllDataDialog(QDialog):
         self.table.setHorizontalHeaderLabels(
             ["No.", "PID", "SSCC", "Destination", "barcode", "error_reason", "이미지", "시간"])
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setItemDelegateForColumn(3, StatusBGDelegate(self.table))
+        self.table.setItemDelegateForColumn(3, StatusBGDelegate(self.table, allow_green=False))
 
         # 기본 헤더 라벨 저장
         self._base_headers = ["No.", "PID", "SSCC", "Destination", "barcode", "error_reason", "이미지", "시간"]
@@ -1128,11 +1136,22 @@ class AllDataDialog(QDialog):
         dlg.setModal(True)
 
         v = QVBoxLayout(dlg)
-        v.addWidget(QLabel("CSV로 내보낼 컬럼을 선택하세요.", dlg))
 
+        # === 상단 컨트롤 바 (두 버튼이 가로폭을 반씩 차지) ===
+        topbar = QHBoxLayout()
+        sel_all = QPushButton("전체 선택", dlg)
+        clr_all = QPushButton("전체 해제", dlg)
+
+        # 두 버튼이 같은 가중치로 폭을 나눠 가지도록 설정
+        sel_all.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        clr_all.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        topbar.addWidget(sel_all, 1)
+        topbar.addWidget(clr_all, 1)
+        v.addLayout(topbar)
+
+        # === 리스트 ===
         lst = QListWidget(dlg)
         lst.setSelectionMode(QListWidget.SelectionMode.NoSelection)
-        # 현재 헤더를 기반으로 항목 생성 (▲/▼ 제거)
         for col in range(self.table.columnCount()):
             item = QListWidgetItem()
             hdr_it = self.table.horizontalHeaderItem(col)
@@ -1144,27 +1163,24 @@ class AllDataDialog(QDialog):
             lst.addItem(item)
         v.addWidget(lst)
 
-        # 버튼들
-        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, parent=dlg)
-        v.addWidget(btns)
+        # === 하단 바(오른쪽 아래에 확인 버튼) ===
+        bottom_bar = QHBoxLayout()
+        bottom_bar.addStretch(1)
+        ok_btn = QPushButton("확인", dlg)
+        ok_btn.setDefault(True)  # Enter키로 확인
+        bottom_bar.addWidget(ok_btn)
+        v.addLayout(bottom_bar)
 
-        # 선택/해제 단축 버튼(선택)
-        hb = QHBoxLayout()
-        sel_all = QPushButton("전체 선택", dlg)
-        clr_all = QPushButton("전체 해제", dlg)
-        hb.addWidget(sel_all)
-        hb.addWidget(clr_all)
-        v.insertLayout(2, hb)
-
+        # === 시그널 연결 ===
         def _set_all(state: Qt.CheckState):
             for i in range(lst.count()):
                 lst.item(i).setCheckState(state)
 
         sel_all.clicked.connect(lambda: _set_all(Qt.CheckState.Checked))
         clr_all.clicked.connect(lambda: _set_all(Qt.CheckState.Unchecked))
-        btns.accepted.connect(dlg.accept)
-        btns.rejected.connect(dlg.reject)
+        ok_btn.clicked.connect(dlg.accept)  # 취소 버튼 없음(X로 닫으면 취소)
 
+        # 다이얼로그 실행
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return None
 
@@ -1175,7 +1191,6 @@ class AllDataDialog(QDialog):
             if it.checkState() == Qt.CheckState.Checked:
                 chosen.append(int(it.data(Qt.ItemDataRole.UserRole)))
         return chosen
-
 
     def _load_all(self):
         """
@@ -1290,28 +1305,30 @@ class AllDataDialog(QDialog):
     def _populate(self, rows: List[Dict[str, Any]]):
         self.table.setRowCount(len(rows))
         for i, row in enumerate(rows, start=1):
-            # 데이터 설정
-            # items = [
-            #     self._NumericItem(str(i)),
-            #     QTableWidgetItem(str(row.get("pid", ""))),
-            #     QTableWidgetItem(str(row.get("sscc", ""))),
-            #     QTableWidgetItem(str(row.get("destination", ""))),
-            #     QTableWidgetItem(str(row.get("barcode", ""))),
-            #     QTableWidgetItem(str(row.get("error_reason", ""))),
-            #     QTableWidgetItem(str(row.get("image_path", ""))),
-            # ]
+            # --- 오리지널 규칙으로 결과 텍스트 산출 ---
+            raw_status = str(row.get("destination") or row.get("status") or "").strip()
+            err = str(row.get("error_reason") or "").strip()
+
+            if err:
+                work_status = "NG"
+            elif raw_status in {"작업 완료", "COMPLETED", "OK", "SUCCESS"}:
+                work_status = "작업 완료"
+            else:
+                work_status = "작업중"
+
             items = [
                 self._NumericItem(str(i)),
                 QTableWidgetItem(str(row.get("pid", ""))),
                 QTableWidgetItem(str(row.get("sscc", ""))),
-                QTableWidgetItem(str(row.get("destination", ""))),
+                QTableWidgetItem(work_status),  # ← 계산된 상태를 넣는다
                 QTableWidgetItem(str(row.get("barcode", ""))),
-                QTableWidgetItem(str(row.get("error_reason", ""))),
-                QTableWidgetItem(""),  # ★ 셀 위젯(라벨)만 보이게 아이템 텍스트는 비움
+                QTableWidgetItem(err),
+                QTableWidgetItem(""),
             ]
 
-            # 처리 상태 색 지정 (아이템을 테이블에 넣기 전에)
-            apply_status_cell_colors(items[3])
+            apply_status_cell_colors(items[3], allow_green=False)  # ← bg_color_for_status는 방금 네가 만든 3종 매핑이면 OK
+            if work_status == "NG" and err:
+                items[3].setToolTip(f"오류: {err}")
 
             # 날짜/시간 항목
             dt_val = row.get("dt")
@@ -1321,40 +1338,29 @@ class AllDataDialog(QDialog):
                 dt_txt = str(dt_val) if dt_val is not None else ""
             items.append(QTableWidgetItem(dt_txt))
 
-            # 각 항목을 테이블에 추가하고 가운데 정렬 설정
+            # 테이블에 추가 + 가운데 정렬
             for col, item in enumerate(items):
                 self.table.setItem(i - 1, col, item)
-                ## ⛔ QSS로 아이템 정렬은 불가 → 코드에서 정렬 유지
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)  # 텍스트 가운데 정렬
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-            ## 이미지 경로 컬럼에 툴팁 추가
-            # if row.get("image_path"):
-            #     img_item = self.table.item(i - 1, 6)
-            #     img_item.setToolTip("더블클릭하여 이미지 열기")
-
+            # 이미지 경로 셀 라벨
             img_path = str(row.get("image_path", "") or "")
             if img_path:
-                # 기존 툴팁(아이템에 추가)
                 img_item = self.table.item(i - 1, 6)
                 if img_item:
                     img_item.setToolTip("더블클릭하여 이미지 열기")
-                    img_item.setText("")  # ★ 혹시 모를 겹침 방지(명시적으로 비우기)
+                    img_item.setText("")  # 혹시 모를 겹침 방지
 
-                # ✅ 라벨을 셀 위젯으로 올려 색상을 QSS로 제어
                 lbl = QLabel(img_path)
                 lbl.setObjectName("ImagePathLabel")
                 lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
                 lbl.setToolTip("더블클릭하여 이미지 열기")
-                # 파일 존재 여부를 동적 프로퍼티로 표시 → QSS에서 색상 분기
-                exists = os.path.exists(img_path)
-                lbl.setProperty("fileExists", "true" if exists else "false")
-                # 즉시 반영(동적 프로퍼티 적용 강제)
+                lbl.setProperty("fileExists", "true" if os.path.exists(img_path) else "false")
                 lbl.style().unpolish(lbl)
                 lbl.style().polish(lbl)
-
                 self.table.setCellWidget(i - 1, 6, lbl)
 
-        # ✅ 루프가 끝난 뒤 '한 번만' 정렬/표시 유지
+        # 한 번만 정렬 유지
         if getattr(self, "_sort_col", -1) in getattr(self, "_allowed_sort_cols", set()):
             hdr = self.table.horizontalHeader()
             hdr.setSortIndicator(self._sort_col, self._sort_order)
@@ -1362,18 +1368,7 @@ class AllDataDialog(QDialog):
             self.table.sortItems(self._sort_col, self._sort_order)
             self.table.setSortingEnabled(False)
 
-        # ▲/▼ 헤더 텍스트 갱신
         self._update_header_sort_icons()
-
-
-
-                # 이미지 존재 여부에 따라 색상 설정
-                ## 이런 하드코딩된 색상 코드('#1d6f42', '#d13438')들을 QSS로 분리하고,
-                # 코드에서는 상태만 지정하는 방식(예: setProperty("fileExists", True))으로 리팩토링할 수 있습니다.
-                # if os.path.exists(str(row.get("image_path", ""))):
-                #     img_item.setForeground(QColor("#1d6f42"))  # 초록색 - 파일 존재
-                # else:
-                #     img_item.setForeground(QColor("#d13438"))  # 빨간색 - 파일 없음
 
 # ---------------------------------------------------------------------------
 # 메인 윈도우 구현
@@ -1388,11 +1383,14 @@ class MainWindow(QMainWindow):
         self.tz = tz
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        # QTimer.singleShot(0, lambda: self._debug_tbl_constraints("after init"))
+        # QTimer.singleShot(0, lambda: self._debug_geom("after init"))
         print("data_table objectName =", self.ui.data_table.objectName())
         self._pack_m1panel()  ## ⬅️ 추가: 패널 재구성
         QTimer.singleShot(0, self._apply_logo)
         self._init_indicator_icons()
-        self._shrink_image_box(420, 320)
+        self._shrink_image_box(mode="auto", vfix=False)  # 자유 확장
+        QTimer.singleShot(0, self._keep_image_square)  # 초기 한 번 정사각형으로
         QTimer.singleShot(0, self._place_conn_log_below_image)
         QTimer.singleShot(0, self._realign_right_panel_to_image)
 
@@ -1443,7 +1441,7 @@ class MainWindow(QMainWindow):
             self.ui.data_table.setItemDelegateForColumn(col,
                                                         AlignDelegate(Qt.AlignmentFlag.AlignCenter, self.ui.data_table))
         # 처리 상태(4번 컬럼)만 배경색 델리게이트 적용
-        self.ui.data_table.setItemDelegateForColumn(4, StatusBGDelegate(self.ui.data_table))
+        self.ui.data_table.setItemDelegateForColumn(4, StatusBGDelegate(self.ui.data_table, allow_green = True))
 
         # 실시간 시계
         self._clock_timer = QTimer(self)
@@ -1474,6 +1472,7 @@ class MainWindow(QMainWindow):
         self._setup_network_monitor()    # 네트워크
         self._setup_speed_monitor()      # 속도
         self._setup_connection_log()
+        # self._lock_right_panel_size(table_w=700, table_h=None)  # 높이는 창에 맞춰 세로로만 늘고, 폭은 700 고정
 
         QTimer.singleShot(0, self._place_conn_log_below_image)
 
@@ -1550,6 +1549,13 @@ class MainWindow(QMainWindow):
         h.addWidget(right_box, 1)
         lay.addRow(row)
 
+    # def _debug_geom(self, tag: str):
+    #     img_r = self.ui.image_label.x() + self.ui.image_label.width()
+    #     btn_r = self.ui.pushButton.x() + self.ui.pushButton.width()
+    #     print(f"[{tag}] img right={img_r}  btn right={btn_r}  "
+    #           f"tbl L={self.ui.data_table.x()}  W={self.ui.data_table.width()}")
+
+
     # ------------------------------------------------------------------
     # UI 초기화 도우미
     # ------------------------------------------------------------------
@@ -1559,7 +1565,19 @@ class MainWindow(QMainWindow):
         - 컬럼명과 너비를 설정합니다.
         - 테이블과 헤더의 스타일을 지정합니다.
         """
-        # 0) QSS 스코프용 objectName (style.css의 #DataTable 규칙이 이걸 타깃팅)
+        # 0) 폭 잠금 해제 + 사이즈 정책 확장으로
+        t = self.ui.data_table
+        t.setMinimumWidth(0)
+        t.setMaximumWidth(16777215)  # 사실상 무제한
+        sp = t.sizePolicy()
+        sp.setHorizontalPolicy(QSizePolicy.Policy.Expanding)  # Fixed → Expanding
+        t.setSizePolicy(sp)
+
+        # (디버그) 잘 풀렸는지 확인
+        print(f"[after reset] minW={t.minimumWidth()} maxW={t.maximumWidth()} "
+              f"fixed?={t.minimumWidth() == t.maximumWidth()} "
+              f"sizePolicy={t.sizePolicy().horizontalPolicy()}")
+        # 0-1) QSS 스코프용 objectName (style.css의 #DataTable 규칙이 이걸 타깃팅)
         self.ui.data_table.setObjectName("DataTable")
         # ✅ 즉시 스타일 재적용 (선택이지만 권장)
         self.ui.data_table.style().unpolish(self.ui.data_table)
@@ -1572,57 +1590,32 @@ class MainWindow(QMainWindow):
         self.ui.data_table.setHorizontalHeaderLabels(headers)
 
         # 2. 컬럼 크기(너비) 조정  (QSS로 불가 → 코드 유지) ##
+        hdr = self.ui.data_table.horizontalHeader()
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+
+        # 고정 폭 예시(원하는 값으로 조절)
         self.ui.data_table.setColumnWidth(0, 90)  # no
         self.ui.data_table.setColumnWidth(1, 90)  # pid
         self.ui.data_table.setColumnWidth(2, 80)  # sscc
         self.ui.data_table.setColumnWidth(3, 130)  # barcode
-        self.ui.data_table.setColumnWidth(4, 20)  # 처리 상태
-        self.ui.data_table.setColumnWidth(5, 260)  # error_reason
-        # 마지막 '상세 내용' 컬럼은 창 크기에 맞춰 남은 공간을 모두 차지하도록 설정
-        self.ui.data_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.ui.data_table.setColumnWidth(4, 100)  # 처리 상태
+        # 마지막 error_reason은 남는 범위에서 스크롤되게 두거나,
+        # 약간 넓혀서 190~240 정도로 맞춰도 OK
+        self.ui.data_table.setColumnWidth(5, 240)
 
         # 3. 테이블/헤더 전반 스타일
         ##    색/패딩/선택색 등은 전역 style.css에서 관리.
         #    번갈이 색 활성화는 코드에서 ON 필요.
         self.ui.data_table.setAlternatingRowColors(True)
 
-        ## ⛔ 인라인 스타일은 전역 QSS로 이동 → 주석/삭제
-        # style_sheet = """
-        #     QTableWidget {
-        #         background-color: #CCCCCC; /* 테이블 전체 배경색 */
-        #         alternate-background-color: #E0E0E0; /* 번갈아 나오는 행 배경색 */
-        #         gridline-color: #DDE2E6; /* 그리드 라인 색상 */
-        #         color: #000000; /* 기본 글자색 */
-        #         border: 1px solid #CED4DA;
-        #         font-size: 13px;
-        #     }
-        #     /* 테이블 헤더 스타일 */
-        #     QHeaderView::section {
-        #         background-color: #495057; /* 헤더 배경색 (어두운 회색) */
-        #         color: #FFFFFF; /* 헤더 글자색 (흰색) */
-        #         font-weight: bold;
-        #         padding: 6px;
-        #         border: none;
-        #         border-bottom: 1px solid #343A40;
-        #     }
-        #     /* 테이블 셀 스타일 */
-        #     QTableWidget::item {
-        #         border-bottom: 1px solid #E9ECEF;
-        #         padding: 5px;
-        #     }
-        #     /* 사용자가 셀을 선택했을 때 스타일 */
-        #     QTableWidget::item:selected {
-        #         background-color: #0D6EFD; /* 선택된 아이템 배경색 (파란색) */
-        #         color: #FFFFFF; /* 선택된 아이템 글자색 (흰색) */
-        #     }
-        # """
-        # self.ui.data_table.setStyleSheet(style_sheet)
-
         # 4. 동작 설정 (스타일 아님 → 코드에 유지) ##
         self.ui.data_table.setShowGrid(True)  # 셀 사이의 그리드 라인 표시
         self.ui.data_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)  # 테이블 내용 직접 편집 방지
         self.ui.data_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)  # 클릭 시 행 전체 선택
         self.ui.data_table.verticalHeader().setVisible(False)  # 수직 헤더(행 번호) 숨기기
+        self.ui.data_table.horizontalHeader().setStretchLastSection(True)
+
 
     # ------------------------------------------------------------------
     # 로고 이미지
@@ -1997,16 +1990,20 @@ class MainWindow(QMainWindow):
 
             if isinstance(cam_block, dict) and "last_seen" in cam_block:
                 # 단일 구조
-                last_seens.append(cam_block.get("last_seen"))
+                val = cam_block.get("last_seen")
+                if isinstance(val, str):
+                    last_seens.append(val)
             elif isinstance(cam_block, dict):
                 # 다중 구조: 각 항목(dict)에 last_seen이 있으면 수집
                 for v in cam_block.values():
-                    if isinstance(v, dict) and "last_seen" in v:
-                        last_seens.append(v.get("last_seen"))
+                    if isinstance(v, dict):
+                        val = v.get("last_seen")
+                        if isinstance(val, str):
+                            last_seens.append(val)
 
             oks: list[bool] = []
-            for ts in last_seens:
-                dt = parse_dt(ts) if isinstance(ts, str) else None
+            for ts in last_seens:  # ts는 항상 str
+                dt = parse_dt(ts)
                 ok = bool(dt and (now - dt) <= timeout)
                 oks.append(ok)
 
@@ -2155,15 +2152,50 @@ class MainWindow(QMainWindow):
     # 연결 상태 변경 로그를 관리하기 위한 간단한 리스트
     def _setup_connection_log(self):
         """
-        연결 상태 로그 설정
+        연결 상태 로그 설정 (표시 위젯만 QLabel → 스크롤 가능한 QPlainTextEdit로 교체)
         """
-        # 로그 항목을 저장할 리스트 초기화
+        # 기존 로직 유지용 내부 리스트
         self.connection_logs = []
 
-        self.ui.conn_log.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        self.ui.conn_log.setWordWrap(True)
-        self.ui.conn_log.setText("연결 상태 로그:")
-        self.ui.conn_log.raise_()  # ← 겹침 방지
+        # 기존 QLabel 자리/부모/크기 재사용
+        old = self.ui.conn_log
+        parent = old.parent()
+        geo = old.geometry()
+
+        te = _CompatLogView(parent)
+        te.setObjectName("conn_log")  # 기존 이름 그대로 유지 (다른 코드와 호환)
+        te.setGeometry(geo)
+        te.setReadOnly(True)
+        te.setFrameStyle(QPlainTextEdit.Shape.NoFrame)
+        te.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        te.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+
+        # 기존 코드가 setText(...)를 호출하므로 그대로 사용 가능
+        te.setText("연결 상태 로그:")
+
+        old.hide()  # 이전 QLabel은 숨기고
+        self.ui.conn_log = te  # 핸들을 교체 (나머지 코드는 전부 그대로 동작)
+
+        self.ui.conn_log.raise_()
+
+    def _append_log(self, line: str, *, max_keep: int = 500):
+        """
+        로그 한 줄 추가 + 자동 스크롤 + 보관 라인 제한.
+        """
+        # 내부 리스트(필요하면 다른 데서도 참조 가능)
+        self.connection_logs.append(line)
+        if len(self.connection_logs) > max_keep:
+            # 오래된 것부터 삭제
+            del self.connection_logs[:-max_keep]
+
+        # 화면에 추가
+        te: QPlainTextEdit = self.ui.conn_log
+        te.appendPlainText(line)
+
+        # 자동 스크롤
+        vsb = te.verticalScrollBar()
+        if vsb is not None:
+            vsb.setValue(vsb.maximum())
 
     def _set_indicator_icon(self, label: QLabel, ok: bool | None, kind: str):
         """
@@ -2214,12 +2246,66 @@ class MainWindow(QMainWindow):
         label.setPixmap(pm)
         label.setToolTip(f"{tip_title}: {'연결' if ok else '끊김' if ok is False else '일부 이상'}")
 
-    def _shrink_image_box(self, w: int, h: int):
+    def _shrink_image_box(self, w: int | None = None, h: int | None = None,
+                          *, mode: str = "auto", vfix: bool = True) -> None:
+        """
+        이미지 라벨 사이즈 제어(한 함수로 '고정'과 '해제' 지원)
+
+        mode:
+          - "fixed" : w×h로 딱 고정(최소/최대/고정 모두 셋업)
+          - "auto"  : 잠금 해제 후 레이아웃에 맞춰 확장
+                      vfix=True  → 가로만 늘리고 높이는 고정(추천)
+                      vfix=False → 가로/세로 모두 레이아웃대로 확장
+        """
         lbl = self.ui.image_label
-        lbl.setMinimumSize(0, 0)  # .ui의 최소 크기(400x300) 해제
-        lbl.setMaximumSize(w, h)
-        lbl.setFixedSize(w, h)  # 딱 고정하고 싶으면
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        if mode == "fixed":
+            if w is None or h is None:
+                return  # 안전장치
+            lbl.setMinimumSize(w, h)
+            lbl.setMaximumSize(w, h)
+            lbl.setFixedSize(w, h)
+            lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            return
+
+        # --- "auto" : 잠금 해제 & 레이아웃에 맞춰 확장 ---
+        lbl.setMinimumSize(0, 0)
+        lbl.setMaximumSize(16777215, 16777215)  # 사실상 무제한
+        if vfix:
+            # 가로만 늘리고, 세로는 현 높이 유지하고 싶을 때
+            lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        else:
+            # 가로/세로 모두 레이아웃에 맡김
+            lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def _keep_image_square(self) -> None:
+        """image_label을 정사각형으로 유지하되, 아래 conn_log를 위한 최소 높이를 보장."""
+        img = self.ui.image_label
+        log = getattr(self.ui, "conn_log", None)
+        cw = getattr(self.ui, "centralwidget", None)
+        if not (img and log and cw):
+            return
+
+        # 레이아웃 여유치
+        GAP = 6  # 이미지와 로그 사이 간격
+        MIN_LOG = 80  # 로그 최소 높이 (원하면 100~140으로 늘리면 됨)
+
+        # 가로 기준(정사각형의 최대 한 변)
+        max_by_width = max(1, img.width())
+
+        # 세로 가용 공간 계산: 중앙위젯 높이 - 이미지 top - 간격 - 로그 최소높이
+        avail_h = cw.height() - img.y() - GAP - MIN_LOG
+        max_by_height = max(1, avail_h)
+
+        # 정사각형 한 변은 두 제약 중 작은 값
+        side = min(max_by_width, max_by_height)
+
+        # 너무 작아지지 않게 바닥값(옵션)
+        side = max(side, 120)
+
+        # 적용
+        img.setFixedSize(side, side)
 
     def _place_conn_log_below_image(self):
         """image_label 바로 아래에 conn_log를 고정 마진으로 배치(타이트 버전)."""
@@ -2250,29 +2336,97 @@ class MainWindow(QMainWindow):
         log.setGeometry(QRect(left, top, width, height))
         log.raise_()
 
-    def _realign_right_panel_to_image(self, gap_x: int = 12, right_margin: int = 12):
-        """인식 이미지(label) 오른쪽에 '작업 현황' 타이틀/테이블을 붙여 정렬."""
+    def _realign_right_panel_to_image(self, gap_x: int = 12, right_margin: int = 0): ## 추후에 필요 없을 수도 있음
+        """이미지 오른쪽 여백(gap_x)을 유지하면서, 테이블의 '오른쪽 끝'을 시작 버튼의 오른쪽 끝에 맞춘다."""
         cw = getattr(self.ui, "centralwidget", None)
         img = getattr(self.ui, "image_label", None)
         tbl = getattr(self.ui, "data_table", None)
-        title = getattr(self.ui, "image_title_2", None)
-        if not (cw and img and tbl and title):
+        title = getattr(self.ui, "image_title_2", None)  # '작업 현황' 라벨
+        btn = getattr(self.ui, "pushButton", None)
+        if not all((cw, img, tbl, title, btn)):
             return
 
-        new_left = img.x() + img.width() + gap_x
-        avail_w = max(0, cw.width() - new_left - right_margin)
+        # 기준점 계산
+        img_right = img.x() + img.width()
+        btn_right = btn.x() + btn.width()
+        left_limit = img_right + gap_x  # 테이블이 침범하면 안 되는 최소 x
+        right_limit = btn_right - right_margin  # 테이블 오른쪽을 맞출 x
 
-        # 타이틀(작업 현황) 위치/폭 조정
-        title_h = title.height()
-        title.setGeometry(QRect(new_left, title.y(), avail_w, title_h))
+        # 현재 테이블 폭 유지(필요 시 범위 내로만 줄임)
+        current_w = tbl.width()
+        max_w = max(50, right_limit - left_limit)
+        new_w = min(current_w, max_w)
 
-        # 테이블 위치/폭 조정 (세로 크기는 그대로 유지)
-        tbl.setGeometry(QRect(new_left, tbl.y(), avail_w, tbl.height()))
+        # 테이블의 '오른쪽 끝'을 버튼 오른쪽 끝에 맞춤
+        new_left = right_limit - new_w
+        if new_left < left_limit:
+            new_left = left_limit  # 겹치지 않게 보정
+
+        # 적용
+        tbl.setGeometry(QRect(new_left, tbl.y(), new_w, tbl.height()))
+        title.setGeometry(QRect(new_left, title.y(), new_w, title.height()))
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        self._place_conn_log_below_image()
+        self._apply_40_60_layout()  # ① 먼저 좌우 폭(이미지/테이블) 확정
+        self._keep_image_square()  # ② 그 폭에 맞춰 정사각형(세로는 위 함수가 제한)
+        self._place_conn_log_below_image()  # ③ 남은 세로에서 로그 배치
         self._realign_right_panel_to_image()
+        # self._debug_geom("resizeEvent end")
+
+    def _apply_40_60_layout(self):
+        """
+        고정 해상도(1280x1024) 기준으로
+          - 인식 이미지 영역: 40%
+          - 작업 현황(타이틀+테이블) 영역: 60%
+        로 가로 폭을 강제 배치한다.
+        """
+        cw = self.ui.centralwidget
+        img = self.ui.image_label
+        log = self.ui.conn_log
+        tbl = self.ui.data_table
+        title = self.ui.image_title_2  # "작업 현황"
+
+        if not all((cw, img, log, tbl, title)):
+            return
+
+        # 고정 레이아웃 파라미터
+        GAP_X = 12  # 이미지 ↔ 테이블 사이 가로 간격
+        LEFT_MARGIN = 10  # 좌측 여백(.ui의 image_label.x()가 10이었음)
+        RIGHT_MARGIN = 10  # 우측 여백
+        TOP_TABLE_Y = tbl.y()  # 테이블의 기존 Y위치 유지(혹은 원하는 Y로 숫자)
+        TITLE_H = title.height()
+
+        total_w = cw.width()  # 보통 1280일 것
+        usable_w = max(0, total_w - LEFT_MARGIN - RIGHT_MARGIN - GAP_X)
+
+        img_w = int(usable_w * 0.4)
+        tbl_w = usable_w - img_w
+
+        # --- 인식 이미지(라벨) 폭/위치 ---
+        img_x = LEFT_MARGIN
+        img_y = img.y()  # 기존 Y 유지
+        img.setGeometry(img_x, img_y, img_w, img.height())
+
+        # 이미지 아래 연결 로그 박스도 이미지 폭에 맞춤
+        # (이미 _place_conn_log_below_image()를 쓰고 있다면, 폭만 여기서 맞춰주고 위치는 그대로 써도 OK)
+        if log:
+            log.setFixedWidth(img_w)
+
+        # --- 작업 현황 타이틀/테이블 폭/위치 ---
+        tbl_x = img_x + img_w + GAP_X
+        title.setGeometry(tbl_x, title.y(), tbl_w, TITLE_H)
+        tbl.setGeometry(tbl_x, TOP_TABLE_Y, tbl_w, tbl.height())
+
+        # 마지막 컬럼이 남는 폭을 깔끔히 채우도록(테이블 내부 빈 여백 방지)
+        hdr = tbl.horizontalHeader()
+        hdr.setStretchLastSection(True)
+
+    # def _debug_tbl_constraints(self, tag="constraints"):
+    #     t = self.ui.data_table
+    #     print(f"[{tag}] minW={t.minimumWidth()} maxW={t.maximumWidth()} "
+    #           f"fixed?={t.minimumWidth() == t.maximumWidth()} "
+    #           f"sizePolicy={t.sizePolicy().horizontalPolicy()}")
 
     # ------------------------------------------------------------------
     # 속도 표시
@@ -2401,8 +2555,8 @@ class MainWindow(QMainWindow):
 #     return app.exec()
 
 def main():
-    if QApplication.instance() is None:
-        QGuiApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
+    # if QApplication.instance() is None:
+    #     QGuiApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
     app = QApplication.instance() or QApplication(sys.argv)
 
     # 내 파일 바로 옆의 style.css를 우선 지정해 강제 적용
