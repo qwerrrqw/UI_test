@@ -8,7 +8,7 @@ import time
 import json
 import csv
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 from datetime import datetime, timedelta, timezone as _TZ   # ← timezone 추가(별칭은 _TZ)
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError        # ← 예외 추가
@@ -163,7 +163,7 @@ def bg_color_for_status(text: str, *, allow_green: bool = True) -> QColor | None
       - 그 외       → 색 없음
     """
     t = (text or "").strip()
-    print("bg_color_for_status:", t)
+    # print("bg_color_for_status:", t) # 디버깅용
     if not t:
         return None
 
@@ -757,6 +757,12 @@ class AllDataDialog(QDialog):
         # ★ 이제 아이콘(▲/▼) 초기 반영
         self._update_header_sort_icons()
 
+        kb_btn = QPushButton("⌨", self)  # 또는 아이콘 사용
+        kb_btn.setToolTip("화상 키보드 열기")
+        kb_btn.setFixedWidth(32)
+        kb_btn.clicked.connect(self._open_virtual_keyboard)
+
+        filter_row.addWidget(kb_btn)
         # (이하 칼럼 폭, 버튼, DB 연결, _load_all() 호출 등 기존 그대로)
 
         # 더블클릭 이벤트 연결
@@ -852,6 +858,56 @@ class AllDataDialog(QDialog):
         g = self.frameGeometry()
         g.moveCenter(avail.center())
         self.move(g.topLeft())
+
+    def _open_virtual_keyboard(self):
+        import os, sys, subprocess, ctypes
+        from ctypes import wintypes
+
+        if not sys.platform.startswith("win"):
+            QMessageBox.information(self, "알림",
+                                    "이 기능은 Windows에서만 지원됩니다.\n다른 운영체제에서는 시스템 화상 키보드를 수동으로 활성화해주세요.")
+            return
+
+        # --- ShellExecuteW 프로토타입 선언 ---
+        shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+        ShellExecuteW = shell32.ShellExecuteW
+        ShellExecuteW.argtypes = [
+            wintypes.HWND,  # hwnd
+            wintypes.LPCWSTR,  # lpOperation
+            wintypes.LPCWSTR,  # lpFile
+            wintypes.LPCWSTR,  # lpParameters
+            wintypes.LPCWSTR,  # lpDirectory
+            ctypes.c_int  # nShowCmd
+        ]
+        ShellExecuteW.restype = wintypes.HINSTANCE  # 반환값 ≤ 32면 에러
+
+        try:
+            # 1) Run(Win+R)과 동일한 ShellExecute 경로
+            r = ShellExecuteW(None, "open", "osk.exe", None, None, 1)  # SW_SHOWNORMAL=1
+            if r > 32:
+                return  # 성공
+
+            # 2) 64비트 OS에서 32비트 파이썬 우회(Sysnative)
+            win = os.environ.get("WINDIR", r"C:\Windows")
+            candidates = [
+                os.path.join(win, "Sysnative", "osk.exe"),
+                os.path.join(win, "System32", "osk.exe"),
+                "osk.exe",
+            ]
+            for path in candidates:
+                try:
+                    subprocess.Popen([path], shell=False)
+                    return
+                except Exception:
+                    pass
+
+            # 3) 터치 키보드(TabTip)도 시도
+            tabtip = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"),
+                                  "Common Files", "microsoft shared", "ink", "TabTip.exe")
+            subprocess.Popen([tabtip], shell=False)
+
+        except Exception as e:
+            QMessageBox.warning(self, "오류", f"화상 키보드를 여는 데 실패했습니다:\n{e}")
 
     # 클래스 메서드로 추가
     def _inflate_calendar_popup(self, de: QDateEdit):
