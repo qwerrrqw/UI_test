@@ -168,7 +168,7 @@ def bg_color_for_status(text: str, *, allow_green: bool = True) -> QColor | None
 
     if t == "NG":
         return QColor(255, 200, 200)   # red-ish
-    if allow_green and t == "작업 완료":
+    if allow_green and t in {"작업 완료", "COMPLETED"}:
         return QColor(200, 255, 200)   # green-ish
     if t == "작업중":
         return QColor(255, 255, 200)   # yellow-ish
@@ -1390,8 +1390,9 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._apply_logo)
         self._init_indicator_icons()
         self._shrink_image_box(mode="auto", vfix=False)  # 자유 확장
-        QTimer.singleShot(0, self._keep_image_square)  # 초기 한 번 정사각형으로
-        QTimer.singleShot(0, self._place_conn_log_below_image)
+        QTimer.singleShot(0, self._keep_image_4_3)  # 초기 한 번 정사각형으로
+        QTimer.singleShot(0, self._sync_left_stack_height_to_table)
+        # QTimer.singleShot(0, self._place_conn_log_below_image)
         QTimer.singleShot(0, self._realign_right_panel_to_image)
 
         # Qt의 QSS가 테이블 셀 배경을 항상 확실히 먹이지 못하는 케이스가 있어 강제로 수동 설정
@@ -1474,7 +1475,7 @@ class MainWindow(QMainWindow):
         self._setup_connection_log()
         # self._lock_right_panel_size(table_w=700, table_h=None)  # 높이는 창에 맞춰 세로로만 늘고, 폭은 700 고정
 
-        QTimer.singleShot(0, self._place_conn_log_below_image)
+        # QTimer.singleShot(0, self._place_conn_log_below_image)
 
     def _pack_m1panel(self):
         p = self.ui.m1panel
@@ -1747,30 +1748,53 @@ class MainWindow(QMainWindow):
     def _on_latest_rows(self, rows: List[Dict[str, Any]]):
         tbl = self.ui.data_table
         tbl.setRowCount(len(rows))
-        for idx, row in enumerate(rows, start=1):
-            # 번호 컬럼: 최근건이 1번
-            no_item = QTableWidgetItem(str(row.get("id", "")))
-            pid_item = QTableWidgetItem(str(row.get("pid", "")))
-            sscc_item = QTableWidgetItem(str(row.get("sscc", "")))
-            barcode_item = QTableWidgetItem(str(row.get("barcode", "")))
-            dest_item = QTableWidgetItem(str(row.get("destination", "")))
-            error_reason = QTableWidgetItem(str(row.get("error_reason", "")))
 
-            apply_status_cell_colors(dest_item)
+        def g(row, *keys):
+            for k in keys:
+                v = row.get(k)
+                if v is not None:
+                    return v
+            return ""
 
-            ## [BEFORE] 개별 아이템마다 중앙 정렬
-            # for it in (no_item, pid_item, sscc_item, dest_item, err_item):
-            #     it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        for r, row in enumerate(rows):
+            # --- 원본 값 가져오기(키 이름 변형에도 견고)
+            status_raw = str(g(row, "status", "destination", "result")).strip()
+            err = str(g(row, "error_reason", "err_reason", "error")).strip()
 
-            # [NOW] 정렬은 컬럼 delegate(AlignDelegate)가 담당 → 위 루프 불필요
-            #       (필요 시 barcode(3)도 delegate 설치로 중앙정렬 가능)
+            # --- 오리지널 우선순위: 에러가 있으면 무조건 NG
+            if err:
+                work = "NG"
+                bg = QColor(255, 200, 200)  # 연빨강
+            else:
+                up = status_raw.upper()
+                if up in {"NG", "ERROR", "FAIL", "REJECT"}:
+                    work = "NG"
+                    bg = QColor(255, 200, 200)
+                elif status_raw in {"작업 완료", "COMPLETED"} or up in {"OK", "SUCCESS", "PASS"}:
+                    work = "작업 완료"
+                    bg = QColor(200, 255, 200)  # 연초록
+                else:
+                    work = "작업중"
+                    bg = QColor(255, 255, 200)  # 연노랑
 
-            tbl.setItem(idx - 1, 0, no_item)
-            tbl.setItem(idx - 1, 1, pid_item)
-            tbl.setItem(idx - 1, 2, sscc_item)
-            tbl.setItem(idx - 1, 3, barcode_item)
-            tbl.setItem(idx - 1, 4, dest_item)
-            tbl.setItem(idx - 1, 5, error_reason)
+            items = [
+                QTableWidgetItem(str(g(row, "id", "no", "seq", ""))),
+                QTableWidgetItem(str(g(row, "pid", ""))),
+                QTableWidgetItem(str(g(row, "sscc", ""))),
+                QTableWidgetItem(str(g(row, "barcode", ""))),
+                QTableWidgetItem(work),
+                QTableWidgetItem(err),
+            ]
+            for c, it in enumerate(items):
+                it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                tbl.setItem(r, c, it)
+
+            # 처리 상태 셀 색/툴팁 (QSS 영향 피하려고 글자색도 명시)
+            result_item = items[4]
+            result_item.setBackground(QBrush(bg))
+            result_item.setForeground(QBrush(QColor("#000000")))
+            if work == "NG" and err:
+                result_item.setToolTip(f"오류: {err}")
 
     @Slot(str)
     def _on_db_error(self, msg: str):
@@ -2279,62 +2303,72 @@ class MainWindow(QMainWindow):
             # 가로/세로 모두 레이아웃에 맡김
             lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-    def _keep_image_square(self) -> None:
-        """image_label을 정사각형으로 유지하되, 아래 conn_log를 위한 최소 높이를 보장."""
-        img = self.ui.image_label
+    def _keep_image_4_3(self) -> None:
+        """
+        image_label을 4:3(가로:세로) 비율로 유지한다.
+        - 기본적으로 현재 label의 '가로'를 그대로 쓰고, 세로는 4:3에 맞춘다.
+        - 다만 화면 세로 가용 공간(로그 최소 높이 확보 후)을 넘으면,
+          그 안에 맞도록 가로/세로를 비율 유지하며 함께 줄인다.
+        """
+        img = getattr(self.ui, "image_label", None)
         log = getattr(self.ui, "conn_log", None)
         cw = getattr(self.ui, "centralwidget", None)
         if not (img and log and cw):
             return
 
-        # 레이아웃 여유치
         GAP = 6  # 이미지와 로그 사이 간격
-        MIN_LOG = 80  # 로그 최소 높이 (원하면 100~140으로 늘리면 됨)
+        MIN_LOG = 80  # 로그 최소 높이
 
-        # 가로 기준(정사각형의 최대 한 변)
-        max_by_width = max(1, img.width())
+        # 현재 가로(그대로 유지하려는 값)
+        cur_w = max(1, img.width())
 
-        # 세로 가용 공간 계산: 중앙위젯 높이 - 이미지 top - 간격 - 로그 최소높이
-        avail_h = cw.height() - img.y() - GAP - MIN_LOG
-        max_by_height = max(1, avail_h)
+        # 4:3 비율에서 목표 높이
+        ideal_h = int(round(cur_w * 3 / 4))
 
-        # 정사각형 한 변은 두 제약 중 작은 값
-        side = min(max_by_width, max_by_height)
+        # 세로 가용 공간: 중앙위젯 높이 - 이미지 top - 간격 - 로그 최소높이
+        avail_h = max(1, cw.height() - img.y() - GAP - MIN_LOG)
 
-        # 너무 작아지지 않게 바닥값(옵션)
-        side = max(side, 120)
+        if ideal_h <= avail_h:
+            # 가용 공간 안에 들어오면 가로 유지, 세로만 4:3로
+            new_w, new_h = cur_w, ideal_h
+        else:
+            # 세로가 넘치면 세로를 가용 높이에 맞추고, 가로를 4:3로 줄임
+            new_h = avail_h
+            new_w = int(round(new_h * 4 / 3))
 
         # 적용
-        img.setFixedSize(side, side)
+        img.setMinimumSize(0, 0)
+        img.setFixedSize(new_w, new_h)
+        img.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-    def _place_conn_log_below_image(self):
-        """image_label 바로 아래에 conn_log를 고정 마진으로 배치(타이트 버전)."""
-        log = getattr(self.ui, "conn_log", None)
-        img = getattr(self.ui, "image_label", None)
-        cw = getattr(self.ui, "centralwidget", None)
-        if not (log and img and cw):
-            return
-
-        GAP = 6  # 이미지 아래 여백(줄임)
-        DESIRED_H = 120  # 로그 상자 기본 높이(줄임)
-        MIN_H = 80  # 최소 높이
-        SIDE_MARGIN = 0  # 좌측을 이미지에 딱 맞춤
-        MARGIN_BOTTOM = 8  # 하단 마진(줄임)
-
-        left = img.x() + SIDE_MARGIN
-        top = img.y() + img.height() + GAP
-        width = img.width()
-
-        max_h = max(0, cw.height() - top - MARGIN_BOTTOM)
-        height = min(DESIRED_H, max_h)
-        if height < MIN_H:
-            height = max(0, max_h)
-            if height < 30:
-                log.hide()
-                return
-        log.show()
-        log.setGeometry(QRect(left, top, width, height))
-        log.raise_()
+    # def _place_conn_log_below_image(self):
+    #     """image_label 바로 아래에 conn_log를 고정 마진으로 배치(타이트 버전)."""
+    #     log = getattr(self.ui, "conn_log", None)
+    #     img = getattr(self.ui, "image_label", None)
+    #     cw = getattr(self.ui, "centralwidget", None)
+    #     if not (log and img and cw):
+    #         return
+    #
+    #     GAP = 6  # 이미지 아래 여백(줄임)
+    #     DESIRED_H = 120  # 로그 상자 기본 높이(줄임)
+    #     MIN_H = 80  # 최소 높이
+    #     SIDE_MARGIN = 0  # 좌측을 이미지에 딱 맞춤
+    #     MARGIN_BOTTOM = 8  # 하단 마진(줄임)
+    #
+    #     left = img.x() + SIDE_MARGIN
+    #     top = img.y() + img.height() + GAP
+    #     width = img.width()
+    #
+    #     max_h = max(0, cw.height() - top - MARGIN_BOTTOM)
+    #     height = min(DESIRED_H, max_h)
+    #     if height < MIN_H:
+    #         height = max(0, max_h)
+    #         if height < 30:
+    #             log.hide()
+    #             return
+    #     log.show()
+    #     log.setGeometry(QRect(left, top, width, height))
+    #     log.raise_()
 
     def _realign_right_panel_to_image(self, gap_x: int = 12, right_margin: int = 0): ## 추후에 필요 없을 수도 있음
         """이미지 오른쪽 여백(gap_x)을 유지하면서, 테이블의 '오른쪽 끝'을 시작 버튼의 오른쪽 끝에 맞춘다."""
@@ -2368,11 +2402,10 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        self._apply_40_60_layout()  # ① 먼저 좌우 폭(이미지/테이블) 확정
-        self._keep_image_square()  # ② 그 폭에 맞춰 정사각형(세로는 위 함수가 제한)
-        self._place_conn_log_below_image()  # ③ 남은 세로에서 로그 배치
+        self._keep_image_4_3()  # 이미지를 먼저 확정
+        self._sync_left_stack_height_to_table()  # 그 다음 로그를 나머지로 채우기
         self._realign_right_panel_to_image()
-        # self._debug_geom("resizeEvent end")
+        self._apply_40_60_layout()
 
     def _apply_40_60_layout(self):
         """
@@ -2427,6 +2460,34 @@ class MainWindow(QMainWindow):
     #     print(f"[{tag}] minW={t.minimumWidth()} maxW={t.maximumWidth()} "
     #           f"fixed?={t.minimumWidth() == t.maximumWidth()} "
     #           f"sizePolicy={t.sizePolicy().horizontalPolicy()}")
+
+    def _sync_left_stack_height_to_table(self, gap: int = 6, bottom_margin: int = 0):
+        """
+        이미지(image_label) 아래에 conn_log를 배치하되,
+        (이미지 높이 + conn_log 높이) == 작업 현황 테이블(data_table) 높이 가 되도록 로그 높이를 채운다.
+        """
+        cw = getattr(self.ui, "centralwidget", None)
+        img = getattr(self.ui, "image_label", None)
+        log = getattr(self.ui, "conn_log", None)
+        tbl = getattr(self.ui, "data_table", None)
+        if not all((cw, img, log, tbl)):
+            return
+
+        # 테이블의 '하단' 좌표 (중앙 위젯 기준)
+        tbl_bottom = tbl.y() + tbl.height()
+
+        # 로그의 목표 top은 "이미지 하단 + gap"
+        log_left = img.x()
+        log_top = img.y() + img.height() + gap
+        log_w = img.width()
+
+        # 로그 높이 = 테이블 하단까지 남은 공간
+        log_h = tbl_bottom - log_top - bottom_margin
+        if log_h < 0:
+            log_h = 0
+
+        log.setGeometry(QRect(log_left, log_top, log_w, log_h))
+        log.setVisible(log_h > 0)
 
     # ------------------------------------------------------------------
     # 속도 표시

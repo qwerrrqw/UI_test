@@ -424,7 +424,7 @@ QPlainTextEdit#conn_log {
   background-color: #2C2F36;
   color: #E0E0E0;
   border: 1px solid #3E4249;
-  padding: 6px;
+  padding: 8px;
   font-family: Consolas, "Courier New", monospace;
-  font-size: 9pt;
+  font-size: 12pt;
 }
