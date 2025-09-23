@@ -163,15 +163,16 @@ def bg_color_for_status(text: str, *, allow_green: bool = True) -> QColor | None
       - 그 외       → 색 없음
     """
     t = (text or "").strip()
+    print("bg_color_for_status:", t)
     if not t:
         return None
 
     if t == "NG":
-        return QColor(255, 200, 200)   # red-ish
+        return QColor("#EF5350")   # red-ish
     if allow_green and t in {"작업 완료", "COMPLETED"}:
-        return QColor(200, 255, 200)   # green-ish
+        return QColor("#A5D6A7")   # green-ish
     if t == "작업중":
-        return QColor(255, 255, 200)   # yellow-ish
+        return QColor(255, 224, 130)   # yellow-ish
 
     return None
 
@@ -394,17 +395,12 @@ class StatusBGDelegate(QStyledItemDelegate):
 
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
+        opt.state = opt.state & ~STATE_MOUSEOVER
 
-        # 타입체커 회피
-        o = cast(Any, opt)
-        o.state = o.state & ~QStyle.StateFlag.State_MouseOver
+        if bg and not (opt.state & STATE_SELECTED):
+            opt.backgroundBrush = QBrush(bg)  # ✔ 배경은 스타일에게 맡김
 
-        if bg and not (o.state & QStyle.StateFlag.State_Selected):
-            painter.save()
-            painter.fillRect(o.rect, bg)
-            painter.restore()
-
-        super().paint(painter, opt, index)
+        super().paint(painter, opt, index)  # ✔ 직접 fillRect 안 함
 
 def apply_status_cell_colors(item: QTableWidgetItem, *, text_color: str = "#000000", allow_green: bool = True) -> None:
     text = (item.text() or "").strip()
@@ -1442,7 +1438,7 @@ class MainWindow(QMainWindow):
             self.ui.data_table.setItemDelegateForColumn(col,
                                                         AlignDelegate(Qt.AlignmentFlag.AlignCenter, self.ui.data_table))
         # 처리 상태(4번 컬럼)만 배경색 델리게이트 적용
-        self.ui.data_table.setItemDelegateForColumn(4, StatusBGDelegate(self.ui.data_table, allow_green = True))
+        # self.ui.data_table.setItemDelegateForColumn(4, StatusBGDelegate(self.ui.data_table, allow_green = True))
 
         # 실시간 시계
         self._clock_timer = QTimer(self)
@@ -1789,12 +1785,19 @@ class MainWindow(QMainWindow):
                 it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 tbl.setItem(r, c, it)
 
+            # work 계산 끝난 뒤
+            bg = bg_color_for_status(work, allow_green=True) or QColor()  # None일 땐 기본
+
             # 처리 상태 셀 색/툴팁 (QSS 영향 피하려고 글자색도 명시)
             result_item = items[4]
-            result_item.setBackground(QBrush(bg))
-            result_item.setForeground(QBrush(QColor("#000000")))
-            if work == "NG" and err:
-                result_item.setToolTip(f"오류: {err}")
+            if bg.isValid():
+                result_item.setBackground(QBrush(bg))
+                result_item.setForeground(QBrush(QColor("#000000")))
+            else:
+                # 이전 색 제거(갱신 반복 시 잔상 방지)
+                result_item.setBackground(QBrush())
+                result_item.setForeground(QBrush())
+
 
     @Slot(str)
     def _on_db_error(self, msg: str):

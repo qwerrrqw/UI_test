@@ -320,12 +320,12 @@ QMainWindow#MainWindow QAbstractItemView#data_table {
 
 /* 3) 셀 배경 직접 지정 (기본/교차행) */
 QMainWindow#MainWindow QAbstractItemView#data_table::item {
-  background-color: #2C2F36;   /* 기본 행 */
+  /*background-color: #2C2F36;   !* 기본 행 *!*/
   border-bottom: 1px solid #3E4249;
   padding: 5px;
 }
 QMainWindow#MainWindow QAbstractItemView#data_table::item:alternate {
-  background-color: #34383F;   /* 교차 행 */
+  /*background-color: #34383F;   !* 교차 행 *!*/
 }
 
 /* 4) 선택 상태 */
